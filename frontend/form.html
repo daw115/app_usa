@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zapytanie o auto z USA</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen">
+<div class="max-w-2xl mx-auto p-6">
+  <header class="mb-6">
+    <h1 class="text-2xl font-semibold text-slate-900">Znajdziemy Ci auto z USA</h1>
+    <p class="text-slate-600 mt-1">Wypełnij formularz — na jego podstawie przygotujemy dopasowaną ofertę.</p>
+  </header>
+
+  {% if submitted %}
+    <div class="bg-white rounded-xl shadow p-6 border border-emerald-200">
+      <div class="text-emerald-600 text-lg font-semibold">Dziękujemy!</div>
+      <p class="text-slate-700 mt-2">Zapytanie zostało przyjęte. Wrócimy do Ciebie mailem z gotowym raportem w ciągu 24 godzin.</p>
+    </div>
+  {% else %}
+    <form action="/inquiry" method="post" class="bg-white rounded-xl shadow p-6 space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="block">
+          <span class="text-sm text-slate-700">Imię i nazwisko *</span>
+          <input required name="client_name" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Email *</span>
+          <input required type="email" name="client_email" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block md:col-span-2">
+          <span class="text-sm text-slate-700">Telefon</span>
+          <input name="client_phone" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+      </div>
+
+      <hr class="my-2">
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="block">
+          <span class="text-sm text-slate-700">Marka</span>
+          <input name="make" placeholder="np. Audi" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Model</span>
+          <input name="model" placeholder="np. A6" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Rocznik od</span>
+          <input type="number" name="year_from" min="1990" max="2030" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Rocznik do</span>
+          <input type="number" name="year_to" min="1990" max="2030" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Budżet maksymalny (PLN)</span>
+          <input type="number" name="budget_pln" min="10000" step="1000" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Maks. przebieg (km)</span>
+          <input type="number" name="mileage_max" min="0" step="1000" class="mt-1 w-full border rounded-lg px-3 py-2" />
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Nadwozie</span>
+          <select name="body_type" class="mt-1 w-full border rounded-lg px-3 py-2">
+            <option value="">Dowolne</option>
+            <option>Sedan</option><option>SUV</option><option>Kombi</option>
+            <option>Hatchback</option><option>Coupe</option><option>Pickup</option>
+            <option>Van</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-sm text-slate-700">Paliwo</span>
+          <select name="fuel" class="mt-1 w-full border rounded-lg px-3 py-2">
+            <option value="">Dowolne</option>
+            <option>Benzyna</option><option>Diesel</option><option>Hybryda</option><option>Elektryczny</option>
+          </select>
+        </label>
+        <label class="block md:col-span-2">
+          <span class="text-sm text-slate-700">Skrzynia</span>
+          <select name="transmission" class="mt-1 w-full border rounded-lg px-3 py-2">
+            <option value="">Dowolna</option>
+            <option>Automatyczna</option><option>Manualna</option>
+          </select>
+        </label>
+      </div>
+
+      <hr class="my-2">
+
+      <fieldset>
+        <legend class="text-sm font-medium text-slate-700 mb-2">Akceptowalny poziom szkody</legend>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="damage_tolerance" value="none" class="mt-1">
+            <span><span class="block font-medium">Brak</span><span class="block text-xs text-slate-500">Tylko auta bez szkód</span></span>
+          </label>
+          <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="damage_tolerance" value="light" checked class="mt-1">
+            <span><span class="block font-medium">Lekka</span><span class="block text-xs text-slate-500">Zarysy, zderzak</span></span>
+          </label>
+          <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="damage_tolerance" value="medium" class="mt-1">
+            <span><span class="block font-medium">Średnia</span><span class="block text-xs text-slate-500">Przód/tył bez ramy</span></span>
+          </label>
+          <label class="flex items-start gap-2 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="damage_tolerance" value="heavy" class="mt-1">
+            <span><span class="block font-medium">Duża</span><span class="block text-xs text-slate-500">Dowolna, ze szkodą całkowitą</span></span>
+          </label>
+        </div>
+      </fieldset>
+
+      <label class="block">
+        <span class="text-sm text-slate-700">Dodatkowe uwagi</span>
+        <textarea name="extra_notes" rows="4" placeholder="np. preferowana skóra, czarny, nawigacja, bez uszkodzeń SRS..." class="mt-1 w-full border rounded-lg px-3 py-2"></textarea>
+      </label>
+
+      <button class="w-full bg-slate-900 text-white py-3 rounded-lg font-medium hover:bg-slate-800">
+        Wyślij zapytanie
+      </button>
+    </form>
+  {% endif %}
+
+  <p class="text-xs text-slate-500 mt-4 text-center">Dane będą wykorzystane wyłącznie do przygotowania oferty.</p>
+</div>
+</body>
+</html>

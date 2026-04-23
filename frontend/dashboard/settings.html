@@ -1,0 +1,33 @@
+{% extends "dashboard/_base.html" %}
+{% block title %}Stawki{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">Stawki kalkulacji kosztu</h1>
+<form action="/settings" method="post" class="bg-white rounded-xl shadow p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+  <label class="block"><span class="text-sm text-slate-700">Transport USA → Polska (USD)</span>
+    <input type="number" step="10" name="transport_usd" value="{{ s.transport_usd }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="block"><span class="text-sm text-slate-700">Opłata agenta (USD)</span>
+    <input type="number" step="10" name="agent_fee_usd" value="{{ s.agent_fee_usd }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="block"><span class="text-sm text-slate-700">Cło (%)</span>
+    <input type="number" step="0.001" name="customs_pct" value="{{ s.customs_pct }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="block"><span class="text-sm text-slate-700">Akcyza (%)</span>
+    <input type="number" step="0.001" name="excise_pct" value="{{ s.excise_pct }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="block"><span class="text-sm text-slate-700">VAT (%)</span>
+    <input type="number" step="0.001" name="vat_pct" value="{{ s.vat_pct }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="block"><span class="text-sm text-slate-700">Marża (PLN)</span>
+    <input type="number" step="100" name="margin_pln" value="{{ s.margin_pln }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="block"><span class="text-sm text-slate-700">Zapas na naprawę (+%)</span>
+    <input type="number" step="0.01" name="repair_safety_pct" value="{{ s.repair_safety_pct }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="block"><span class="text-sm text-slate-700">Kurs USD/PLN</span>
+    <input type="number" step="0.01" name="usd_pln_rate" value="{{ s.usd_pln_rate }}" class="mt-1 w-full border rounded px-3 py-2"></label>
+  <label class="flex items-center gap-2 md:col-span-2"><input type="checkbox" name="auto_usd_rate" {{ 'checked' if s.auto_usd_rate else '' }}>
+    <span class="text-sm">Automatycznie pobieraj kurs z NBP przed każdym wyszukiwaniem</span></label>
+  <div class="md:col-span-2">
+    <button class="bg-slate-900 text-white px-4 py-2 rounded text-sm">Zapisz</button>
+  </div>
+</form>
+
+<div class="mt-6 text-sm text-slate-600 bg-white rounded-xl shadow p-6">
+  <div class="font-semibold mb-2">Przykładowa kalkulacja</div>
+  Aukcja $20,000 + agent + transport + cło + akcyza + VAT + naprawa (z zapasem) + marża. Wzór używany w pricing.py.
+</div>
+{% endblock %}

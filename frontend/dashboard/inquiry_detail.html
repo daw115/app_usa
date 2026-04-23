@@ -1,0 +1,131 @@
+{% extends "dashboard/_base.html" %}
+{% block title %}Zapytanie #{{ inquiry.id }}{% endblock %}
+{% block content %}
+<div class="mb-4"><a href="/" class="text-sm text-slate-500 hover:text-slate-900">&larr; Wszystkie zapytania</a></div>
+
+<section class="bg-white rounded-xl shadow p-6 mb-6">
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-xl font-semibold">Zapytanie #{{ inquiry.id }} — {{ inquiry.client_name }}</h1>
+      <div class="text-slate-600 text-sm mt-1">
+        {{ inquiry.client_email }} · {{ inquiry.client_phone or '—' }}
+      </div>
+    </div>
+    <span class="px-3 py-1 rounded-full text-xs bg-slate-100">{{ inquiry.status.value }}</span>
+  </div>
+  <dl class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-4">
+    <div><dt class="text-slate-500">Marka/Model</dt><dd>{{ inquiry.make }} {{ inquiry.model }}</dd></div>
+    <div><dt class="text-slate-500">Rocznik</dt><dd>{{ inquiry.year_from or '—' }} – {{ inquiry.year_to or '—' }}</dd></div>
+    <div><dt class="text-slate-500">Budżet</dt><dd>{{ '{:,}'.format(inquiry.budget_pln) if inquiry.budget_pln else '—' }} PLN</dd></div>
+    <div><dt class="text-slate-500">Max przebieg</dt><dd>{{ inquiry.mileage_max or '—' }} km</dd></div>
+    <div><dt class="text-slate-500">Nadwozie</dt><dd>{{ inquiry.body_type or '—' }}</dd></div>
+    <div><dt class="text-slate-500">Paliwo</dt><dd>{{ inquiry.fuel or '—' }}</dd></div>
+    <div><dt class="text-slate-500">Skrzynia</dt><dd>{{ inquiry.transmission or '—' }}</dd></div>
+    <div><dt class="text-slate-500">Szkoda</dt><dd>{{ inquiry.damage_tolerance.value }}</dd></div>
+  </dl>
+  {% if inquiry.extra_notes %}
+  <div class="mt-4 text-sm"><div class="text-slate-500">Uwagi klienta</div><div class="mt-1 whitespace-pre-wrap">{{ inquiry.extra_notes }}</div></div>
+  {% endif %}
+
+  <div class="flex gap-2 mt-6">
+    <form action="/inquiry/{{ inquiry.id }}/search" method="post"><button class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-800">🔍 Szukaj na giełdach</button></form>
+    <form action="/inquiry/{{ inquiry.id }}/generate_report" method="post"><button class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700">📝 Generuj raport</button></form>
+  </div>
+</section>
+
+<section class="bg-white rounded-xl shadow p-6 mb-6">
+  <details>
+    <summary class="font-semibold cursor-pointer">Dodaj aukcję ręcznie (awaryjnie)</summary>
+    <form action="/inquiry/{{ inquiry.id }}/add_manual_url" method="post" class="grid grid-cols-1 md:grid-cols-4 gap-2 mt-4 text-sm">
+      <select name="source" class="border rounded px-2 py-2">
+        <option value="copart">Copart</option>
+        <option value="iaai">IAAI</option>
+        <option value="amerpol">Amerpol</option>
+        <option value="manual">Inne</option>
+      </select>
+      <input name="url" required placeholder="https://..." class="md:col-span-3 border rounded px-3 py-2">
+      <input name="title" placeholder="Tytuł (np. 2019 Audi A6 Premium)" class="md:col-span-2 border rounded px-3 py-2">
+      <input name="year" type="number" placeholder="Rok" class="border rounded px-3 py-2">
+      <input name="mileage" type="number" placeholder="Przebieg (km)" class="border rounded px-3 py-2">
+      <input name="make" placeholder="Marka" class="border rounded px-3 py-2">
+      <input name="model" placeholder="Model" class="border rounded px-3 py-2">
+      <input name="damage_primary" placeholder="Szkoda (np. FRONT END)" class="border rounded px-3 py-2">
+      <input name="bid_usd" placeholder="Aktualna cena USD" class="border rounded px-3 py-2">
+      <textarea name="photos" rows="4" placeholder="URLe zdjęć, po jednym w linii (5-8 szt)" class="md:col-span-4 border rounded px-3 py-2"></textarea>
+      <button class="md:col-span-4 bg-slate-700 text-white px-4 py-2 rounded">Dodaj listing</button>
+    </form>
+  </details>
+</section>
+
+<section class="bg-white rounded-xl shadow p-6 mb-6">
+  <h2 class="font-semibold mb-3">Kandydaci ({{ listings|length }})</h2>
+  {% if not listings %}
+    <div class="text-slate-500 text-sm">Brak — uruchom wyszukiwanie lub dodaj URL ręcznie.</div>
+  {% else %}
+  <div class="space-y-3">
+    {% for item in listings %}
+    {% set l = item.listing %}
+    {% set photos_list = item.photos_list %}
+    <div class="border rounded-lg p-4 {{ 'opacity-50' if l.excluded else '' }}">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span class="uppercase font-medium">{{ l.source.value }}</span>
+            {% if l.recommended_rank %}<span class="bg-emerald-100 text-emerald-700 px-2 rounded">#{{ l.recommended_rank }} rekomendacja</span>{% endif %}
+            {% if l.vin %}<span>VIN: {{ l.vin }}</span>{% endif %}
+          </div>
+          <a href="{{ l.source_url }}" target="_blank" class="font-medium hover:underline block mt-1">{{ l.title or l.source_url }}</a>
+          <div class="text-sm text-slate-600 mt-1">
+            {% if l.year %}{{ l.year }} · {% endif %}
+            {% if l.mileage %}{{ '{:,}'.format(l.mileage) }} km · {% endif %}
+            {% if l.damage_primary %}{{ l.damage_primary }}{% if l.damage_secondary %}, {{ l.damage_secondary }}{% endif %}{% endif %}
+          </div>
+          {% if l.ai_notes %}<div class="text-sm mt-2 text-slate-700">{{ l.ai_notes }}</div>{% endif %}
+        </div>
+        <div class="text-right text-sm shrink-0">
+          {% if l.current_bid_usd or l.buy_now_usd %}
+            <div>Aukcja: <strong>${{ '{:,.0f}'.format(l.buy_now_usd or l.current_bid_usd) }}</strong></div>
+          {% endif %}
+          {% if l.ai_damage_score %}<div>Szkoda: {{ l.ai_damage_score }}/10</div>{% endif %}
+          {% if l.total_cost_pln %}<div class="text-lg font-semibold text-slate-900 mt-1">{{ '{:,.0f}'.format(l.total_cost_pln) }} PLN</div>{% endif %}
+          <div class="flex gap-3 mt-2 justify-end text-xs">
+            <form action="/listing/{{ l.id }}/analyze" method="post">
+              <button class="text-slate-600 hover:text-slate-900">🤖 Przeanalizuj</button>
+            </form>
+            <form action="/listing/{{ l.id }}/toggle" method="post">
+              <button class="text-slate-500 hover:text-red-600">{{ 'Przywróć' if l.excluded else 'Ukryj' }}</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% if photos_list %}
+      <div class="flex gap-2 mt-3 overflow-x-auto">
+        {% for p in photos_list[:6] %}
+          <img src="{{ p }}" class="h-20 rounded object-cover" loading="lazy">
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% if reports %}
+<section class="bg-white rounded-xl shadow p-6">
+  <h2 class="font-semibold mb-3">Raporty</h2>
+  <ul class="space-y-2 text-sm">
+    {% for r in reports %}
+    <li class="flex items-center justify-between border-b pb-2">
+      <div>
+        <a href="/report/{{ r.id }}/edit" class="font-medium hover:underline">#{{ r.id }}</a>
+        <span class="text-slate-500 ml-2">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <span class="ml-2 px-2 py-0.5 rounded bg-slate-100 text-xs">{{ r.status.value }}</span>
+      </div>
+      <div class="text-slate-500">{{ r.subject }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

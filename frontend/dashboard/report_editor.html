@@ -1,0 +1,37 @@
+{% extends "dashboard/_base.html" %}
+{% block title %}Raport #{{ report.id }}{% endblock %}
+{% block content %}
+<div class="mb-4"><a href="/inquiry/{{ inquiry.id }}" class="text-sm text-slate-500 hover:text-slate-900">&larr; Zapytanie #{{ inquiry.id }}</a></div>
+
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Raport dla {{ inquiry.client_name }}</h1>
+  <span class="px-3 py-1 rounded-full text-xs bg-slate-100">{{ report.status.value }}</span>
+</div>
+
+<form action="/report/{{ report.id }}/save" method="post" class="bg-white rounded-xl shadow p-6 space-y-4">
+  <label class="block">
+    <span class="text-sm text-slate-700">Temat</span>
+    <input name="subject" value="{{ report.subject }}" class="mt-1 w-full border rounded px-3 py-2">
+  </label>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <label class="block">
+      <span class="text-sm text-slate-700">HTML emaila</span>
+      <textarea name="html_body" rows="24" class="mt-1 w-full border rounded px-3 py-2 font-mono text-xs">{{ report.html_body }}</textarea>
+    </label>
+    <div>
+      <div class="text-sm text-slate-700 mb-1">Podgląd</div>
+      <div class="border rounded p-4 bg-white overflow-auto" style="max-height:600px">
+        <iframe srcdoc="{{ report.html_body|e }}" class="w-full" style="height:560px;border:0"></iframe>
+      </div>
+    </div>
+  </div>
+  <div class="flex gap-2">
+    <button class="bg-slate-900 text-white px-4 py-2 rounded text-sm">💾 Zapisz</button>
+    <button formaction="/report/{{ report.id }}/draft_to_gmail" class="bg-emerald-600 text-white px-4 py-2 rounded text-sm">📧 Utwórz draft w Gmailu</button>
+    <button formaction="/report/{{ report.id }}/mark_sent" class="bg-slate-500 text-white px-4 py-2 rounded text-sm">✅ Oznacz jako wysłane</button>
+  </div>
+  {% if report.gmail_draft_id %}
+    <div class="text-sm text-slate-500">Draft w Gmailu: <code>{{ report.gmail_draft_id }}</code> — otwórz swoją skrzynkę i kliknij Wyślij.</div>
+  {% endif %}
+</form>
+{% endblock %}
