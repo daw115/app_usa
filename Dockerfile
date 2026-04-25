@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.9-slim-bookworm
 
 # Railway deployment - updated 2026-04-25
 WORKDIR /app
