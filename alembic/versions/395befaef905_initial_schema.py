@@ -19,12 +19,41 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum types for PostgreSQL using raw SQL with IF NOT EXISTS
+    # Create enum types for PostgreSQL with existence check
     conn = op.get_bind()
-    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS source AS ENUM ('copart', 'iaai', 'amerpol', 'auctiongate', 'manual')"))
-    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS damagetolerance AS ENUM ('none', 'light', 'medium', 'heavy')"))
-    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS inquirystatus AS ENUM ('new', 'searching', 'analyzing', 'ready', 'sent', 'archived')"))
-    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS reportstatus AS ENUM ('draft', 'approved', 'sent')"))
+
+    # Check and create enum types using DO blocks
+    conn.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE source AS ENUM ('copart', 'iaai', 'amerpol', 'auctiongate', 'manual');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """))
+
+    conn.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE damagetolerance AS ENUM ('none', 'light', 'medium', 'heavy');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """))
+
+    conn.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE inquirystatus AS ENUM ('new', 'searching', 'analyzing', 'ready', 'sent', 'archived');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """))
+
+    conn.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE reportstatus AS ENUM ('draft', 'approved', 'sent');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """))
 
     # Define enum types for table creation
     source_enum = sa.Enum('copart', 'iaai', 'amerpol', 'auctiongate', 'manual', name='source', create_type=False)
