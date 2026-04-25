@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -121,14 +122,22 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             await _refresh_usd_rate(s)
             criteria = _criteria(inquiry)
 
-        all_scraped: list[ScrapedListing] = []
-        for mod in (amerpol, copart, iaai):
+        # Parallel scraping with asyncio.gather
+        async def scrape_source(mod):
             try:
                 scraped = await mod.search(criteria)
                 log.info("%s returned %d results", mod.__name__, len(scraped))
-                all_scraped.extend(scraped)
+                return scraped
             except Exception as e:
                 log.exception("scraper %s failed: %s", mod.__name__, e)
+                return []
+
+        results = await asyncio.gather(
+            scrape_source(amerpol),
+            scrape_source(copart),
+            scrape_source(iaai),
+        )
+        all_scraped = [item for sublist in results for item in sublist]
 
         with Session(engine) as s:
             inquiry = s.get(Inquiry, inquiry_id)
@@ -138,13 +147,15 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             s.add(inquiry)
             s.commit()
 
+        # Parallel AI analysis
         with Session(engine) as s:
             settings = _get_settings(s)
             listings = s.exec(select(Listing).where(Listing.inquiry_id == inquiry_id)).all()
-            for listing in listings:
+
+            async def analyze_one(listing: Listing):
                 photos = json.loads(listing.photos_json or "[]")
                 if not photos:
-                    continue
+                    return None
                 listing_data = {
                     "title": listing.title,
                     "year": listing.year,
@@ -160,11 +171,21 @@ async def run_search_pipeline(inquiry_id: int) -> None:
                 }
                 try:
                     result = await analyzer.analyze_listing(listing_data, photos)
-                    _apply_analysis(listing, result, settings)
-                    s.add(listing)
-                    s.commit()
+                    return (listing, result)
                 except Exception as e:
                     log.exception("analyzer failed for listing %s: %s", listing.id, e)
+                    return None
+
+            # Analyze all listings in parallel
+            analysis_results = await asyncio.gather(*[analyze_one(l) for l in listings])
+
+            # Apply results
+            for result in analysis_results:
+                if result:
+                    listing, analysis = result
+                    _apply_analysis(listing, analysis, settings)
+                    s.add(listing)
+            s.commit()
 
             listings = s.exec(select(Listing).where(Listing.inquiry_id == inquiry_id)).all()
             _rank(listings, s.get(Inquiry, inquiry_id))

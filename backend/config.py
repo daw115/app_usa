@@ -30,6 +30,12 @@ class Config(BaseSettings):
     amerpol_password: str = ""
     scraperapi_key: str = ""
 
+    # Resource limits
+    playwright_timeout: int = 30000  # ms per page navigation
+    scraper_page_timeout: int = 15000  # ms waiting for selectors
+    ai_timeout_seconds: int = 60  # seconds per AI analysis
+    ai_max_photos: int = 6  # max photos per listing
+
 
 config = Config()
 ROOT = Path(__file__).resolve().parent.parent
