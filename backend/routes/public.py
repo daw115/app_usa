@@ -79,7 +79,6 @@ async def track_inquiry(request: Request, inquiry_id: int, token: str):
 @limiter.limit("10/hour")
 async def submit_inquiry(
     request: Request,
-    background: BackgroundTasks,
     client_name: str = Form(...),
     client_email: str = Form(...),
     client_phone: str = Form(""),
@@ -94,6 +93,7 @@ async def submit_inquiry(
     transmission: str = Form(""),
     damage_tolerance: str = Form("light"),
     extra_notes: str = Form(""),
+    background: BackgroundTasks = BackgroundTasks(),
 ):
     # Validate and sanitize inputs
     client_name = sanitize_string(client_name, 200)
