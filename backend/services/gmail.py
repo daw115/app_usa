@@ -66,10 +66,18 @@ def _send_via_smtp(to: str, subject: str, html_body: str) -> None:
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, context=context) as server:
-        server.login(config.smtp_user, config.smtp_password)
-        server.send_message(msg)
-        log.info("Email sent via SMTP to %s", to)
+    if config.smtp_port == 465:
+        # SSL/TLS (port 465)
+        with smtplib.SMTP_SSL(config.smtp_host, config.smtp_port, context=context) as server:
+            server.login(config.smtp_user, config.smtp_password)
+            server.send_message(msg)
+    else:
+        # STARTTLS (port 587)
+        with smtplib.SMTP(config.smtp_host, config.smtp_port) as server:
+            server.starttls(context=context)
+            server.login(config.smtp_user, config.smtp_password)
+            server.send_message(msg)
+    log.info("Email sent via SMTP to %s", to)
 
 
 def create_draft(to: str, subject: str, html_body: str) -> str:
