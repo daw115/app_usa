@@ -21,5 +21,8 @@ RUN playwright install-deps chromium
 # Copy application code
 COPY . .
 
-# Run migrations and start the application
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}"]
+# Copy and set entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
