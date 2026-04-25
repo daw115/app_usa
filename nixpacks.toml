@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python39", "playwright-driver-chromium"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt", "playwright install chromium"]
+
+[start]
+cmd = "sh -c 'alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port $PORT'"
