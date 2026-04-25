@@ -108,12 +108,22 @@ async def auto_search_job():
         logging.setLogRecordFactory(old_factory)
 
 
+async def cache_cleanup_job():
+    """Clean up expired cache entries every hour"""
+    from backend.services.cache import get_cache
+    cache = get_cache()
+    cache.cleanup_expired()
+    stats = cache.stats()
+    log.info(f"Cache cleanup complete: {stats}")
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
     scheduler.add_job(auto_search_job, "interval", minutes=30, id="auto_search")
+    scheduler.add_job(cache_cleanup_job, "interval", hours=1, id="cache_cleanup")
     scheduler.start()
-    log.info("Auto-search scheduler started (runs every 30 minutes)")
+    log.info("Schedulers started: auto-search (30min), cache cleanup (1h)")
 
 
 @app.on_event("shutdown")
@@ -144,3 +154,11 @@ async def health():
         return {"ok": True, "db": "connected", "anthropic": "configured"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/cache/stats")
+async def cache_stats():
+    """Get cache statistics"""
+    from backend.services.cache import get_cache
+    cache = get_cache()
+    return cache.stats()
