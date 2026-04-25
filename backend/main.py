@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
@@ -17,11 +18,21 @@ from backend.models import Inquiry, InquiryStatus, Settings
 from backend.routes import dashboard, public
 from backend.tasks import run_search_pipeline
 
+# Structured logging setup
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s [%(request_id)s] — %(message)s",
 )
 log = logging.getLogger(__name__)
+
+# Add request_id to all log records
+class RequestIDFilter(logging.Filter):
+    def filter(self, record):
+        if not hasattr(record, 'request_id'):
+            record.request_id = '-'
+        return True
+
+logging.root.addFilter(RequestIDFilter())
 
 # Validate critical env vars
 if not config.anthropic_api_key:
@@ -32,28 +43,69 @@ app = FastAPI(title="AutoScout US")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Request ID middleware
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = str(uuid.uuid4())[:8]
+    request.state.request_id = request_id
+
+    # Add to logging context
+    old_factory = logging.getLogRecordFactory()
+    def record_factory(*args, **kwargs):
+        record = old_factory(*args, **kwargs)
+        record.request_id = request_id
+        return record
+    logging.setLogRecordFactory(record_factory)
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+
+    # Restore factory
+    logging.setLogRecordFactory(old_factory)
+    return response
+
 scheduler = AsyncIOScheduler()
 
 
 async def auto_search_job():
     """Auto-search for new inquiries every 30 minutes"""
-    with Session(engine) as s:
-        settings = s.exec(select(Settings).where(Settings.id == 1)).first()
-        if not settings or not settings.auto_search_enabled:
-            return
+    job_id = str(uuid.uuid4())[:8]
 
-        # Find new inquiries
-        new_inquiries = s.exec(
-            select(Inquiry).where(Inquiry.status == InquiryStatus.new)
-        ).all()
+    # Set logging context for background job
+    old_factory = logging.getLogRecordFactory()
+    def record_factory(*args, **kwargs):
+        record = old_factory(*args, **kwargs)
+        record.request_id = f"job-{job_id}"
+        return record
+    logging.setLogRecordFactory(record_factory)
 
-        # Rate limit: max 5 per run
-        for inquiry in new_inquiries[:5]:
-            try:
-                log.info(f"Auto-search triggered for inquiry {inquiry.id}")
-                await run_search_pipeline(inquiry.id)
-            except Exception as e:
-                log.exception(f"Auto-search failed for inquiry {inquiry.id}: {e}")
+    try:
+        with Session(engine) as s:
+            settings = s.exec(select(Settings).where(Settings.id == 1)).first()
+            if not settings or not settings.auto_search_enabled:
+                log.info("Auto-search disabled in settings")
+                return
+
+            # Find new inquiries
+            new_inquiries = s.exec(
+                select(Inquiry).where(Inquiry.status == InquiryStatus.new)
+            ).all()
+
+            if not new_inquiries:
+                log.info("No new inquiries to process")
+                return
+
+            log.info(f"Auto-search: Processing {len(new_inquiries)} new inquiries (max 5)")
+
+            # Rate limit: max 5 per run
+            for inquiry in new_inquiries[:5]:
+                try:
+                    log.info(f"Auto-search triggered for inquiry {inquiry.id}")
+                    await run_search_pipeline(inquiry.id)
+                except Exception as e:
+                    log.exception(f"Auto-search failed for inquiry {inquiry.id}: {e}")
+    finally:
+        logging.setLogRecordFactory(old_factory)
 
 
 @app.on_event("startup")
