@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from slowapi import Limiter
@@ -93,7 +93,6 @@ async def submit_inquiry(
     transmission: str = Form(""),
     damage_tolerance: str = Form("light"),
     extra_notes: str = Form(""),
-    background: BackgroundTasks = BackgroundTasks(),
 ):
     # Validate and sanitize inputs
     client_name = sanitize_string(client_name, 200)
@@ -143,6 +142,7 @@ async def submit_inquiry(
         inquiry_id = inquiry.id
 
     from backend.services.telegram_bot import notify_new_inquiry
-    background.add_task(notify_new_inquiry, inquiry_id)
+    import asyncio
+    asyncio.create_task(notify_new_inquiry(inquiry_id))
 
     return templates.TemplateResponse("form.html", {"request": request, "submitted": True})
