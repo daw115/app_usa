@@ -19,16 +19,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum types for PostgreSQL
-    source_enum = sa.Enum('copart', 'iaai', 'amerpol', 'auctiongate', 'manual', name='source')
-    damage_tolerance_enum = sa.Enum('none', 'light', 'medium', 'heavy', name='damagetolerance')
-    inquiry_status_enum = sa.Enum('new', 'searching', 'analyzing', 'ready', 'sent', 'archived', name='inquirystatus')
-    report_status_enum = sa.Enum('draft', 'approved', 'sent', name='reportstatus')
+    # Create enum types for PostgreSQL using raw SQL with IF NOT EXISTS
+    conn = op.get_bind()
+    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS source AS ENUM ('copart', 'iaai', 'amerpol', 'auctiongate', 'manual')"))
+    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS damagetolerance AS ENUM ('none', 'light', 'medium', 'heavy')"))
+    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS inquirystatus AS ENUM ('new', 'searching', 'analyzing', 'ready', 'sent', 'archived')"))
+    conn.execute(sa.text("CREATE TYPE IF NOT EXISTS reportstatus AS ENUM ('draft', 'approved', 'sent')"))
 
-    source_enum.create(op.get_bind(), checkfirst=True)
-    damage_tolerance_enum.create(op.get_bind(), checkfirst=True)
-    inquiry_status_enum.create(op.get_bind(), checkfirst=True)
-    report_status_enum.create(op.get_bind(), checkfirst=True)
+    # Define enum types for table creation
+    source_enum = sa.Enum('copart', 'iaai', 'amerpol', 'auctiongate', 'manual', name='source', create_type=False)
+    damage_tolerance_enum = sa.Enum('none', 'light', 'medium', 'heavy', name='damagetolerance', create_type=False)
+    inquiry_status_enum = sa.Enum('new', 'searching', 'analyzing', 'ready', 'sent', 'archived', name='inquirystatus', create_type=False)
+    report_status_enum = sa.Enum('draft', 'approved', 'sent', name='reportstatus', create_type=False)
 
     # Create inquiry table
     op.create_table(
