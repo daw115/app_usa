@@ -6,6 +6,16 @@ scraper szuka aut → Claude analizuje zdjęcia szkód i wycenia naprawę →
 synthesizer generuje raport-ofertę → Janek zatwierdza w dashboardzie i
 wysyła draftem Gmaila.
 
+## 🚀 Pierwsza Konfiguracja
+
+**Nowy użytkownik?** Zacznij tutaj:
+
+- **[SETUP.md](SETUP.md)** - Kompleksowy przewodnik konfiguracji krok po kroku
+- **[CHECKLIST.md](CHECKLIST.md)** - Quick reference checklist
+- **Interaktywny setup:** `python3 setup.py` - automatyczny wizard
+
+Po konfiguracji uruchom `python verify_config.py` aby zweryfikować setup.
+
 ## Szybki start
 
 ```bash
