@@ -34,59 +34,78 @@ async def search(criteria: SearchCriteria) -> list[ScrapedListing]:
         return []
 
     results: list[ScrapedListing] = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(storage_state=str(state_file))
-        page = await context.new_page()
-        try:
-            url = COPART_SEARCH_TPL.format(query=_build_query(criteria))
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await jitter()
-            await page.wait_for_timeout(3000)
+    browser = None
+    context = None
 
-            lot_links = await page.query_selector_all("a[href*='/lot/']")
-            seen_urls = set()
-            log.info(f"Found {len(lot_links)} lot links on Copart search page")
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)
+            context = await browser.new_context(storage_state=str(state_file))
+            page = await context.new_page()
 
-            for link in lot_links:
-                if len(results) >= criteria.max_results:
-                    break
-                try:
-                    href = await link.get_attribute("href") or ""
-                    if not href or href in seen_urls:
+            try:
+                url = COPART_SEARCH_TPL.format(query=_build_query(criteria))
+                log.info(f"Copart: Loading search page {url}")
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await jitter()
+                await page.wait_for_timeout(3000)
+
+                lot_links = await page.query_selector_all("a[href*='/lot/']")
+                seen_urls = set()
+                log.info(f"Copart: Found {len(lot_links)} lot links")
+
+                for link in lot_links:
+                    if len(results) >= criteria.max_results:
+                        break
+                    try:
+                        href = await link.get_attribute("href") or ""
+                        if not href or href in seen_urls:
+                            continue
+                        seen_urls.add(href)
+
+                        if href.startswith("/"):
+                            href = "https://www.copart.com" + href
+
+                        parts = href.split("/")
+                        if len(parts) >= 6:
+                            title = parts[5].replace("-", " ").title()
+                        else:
+                            title = f"Copart Lot {parts[4] if len(parts) > 4 else ''}"
+
+                        results.append(ScrapedListing(
+                            source="copart",
+                            source_url=href,
+                            title=title,
+                        ))
+                    except Exception as e:
+                        log.warning(f"Copart: Failed to parse link: {e}")
                         continue
-                    seen_urls.add(href)
 
-                    if href.startswith("/"):
-                        href = "https://www.copart.com" + href
+                for listing in results:
+                    try:
+                        log.debug(f"Copart: Fetching details for {listing.source_url}")
+                        await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
+                        await jitter()
+                        await _enrich_detail(page, listing)
+                    except Exception as e:
+                        log.error(f"Copart: Failed to fetch details for {listing.source_url}: {e}")
+                        continue
 
-                    # Extract title from URL: /lot/99885295/2013-bmw-x5-xdrive35i-nj-glassboro-east
-                    parts = href.split("/")
-                    if len(parts) >= 6:
-                        title = parts[5].replace("-", " ").title()
-                    else:
-                        title = f"Copart Lot {parts[4] if len(parts) > 4 else ''}"
-                        log.debug(f"Short URL, parts={len(parts)}: {href}")
+            finally:
+                if context:
+                    await context.close()
+                if browser:
+                    await browser.close()
 
-                    log.debug(f"Adding listing: {title} from {href}")
-                    results.append(ScrapedListing(
-                        source="copart",
-                        source_url=href,
-                        title=title,
-                    ))
-                except Exception as e:
-                    log.debug("copart link parse failed: %s", e)
+    except Exception as e:
+        log.error(f"Copart search failed: {e}", exc_info=True)
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
 
-            for listing in results:
-                try:
-                    await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
-                    await jitter()
-                    await _enrich_detail(page, listing)
-                except Exception as e:
-                    log.debug("copart detail fetch failed for %s: %s", listing.source_url, e)
-        finally:
-            await context.close()
-            await browser.close()
+    log.info(f"Copart: Returning {len(results)} listings")
     return results
 
 
