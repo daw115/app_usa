@@ -38,13 +38,18 @@ class Source(str, Enum):
 
 
 class Inquiry(SQLModel, table=True):
+    __tablename__ = "inquiry"
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     client_name: str
-    client_email: str
+    client_email: str = Field(index=True)
     client_phone: str = ""
-    make: str = ""
-    model: str = ""
+    make: str = Field(index=True)
+    model: str = Field(index=True)
     year_from: Optional[int] = None
     year_to: Optional[int] = None
     budget_pln: Optional[int] = None
@@ -55,19 +60,24 @@ class Inquiry(SQLModel, table=True):
     damage_tolerance: DamageTolerance = DamageTolerance.light
     extra_notes: str = ""
     status: InquiryStatus = Field(default=InquiryStatus.new, index=True)
-    tracking_token: str = Field(default_factory=lambda: str(__import__('uuid').uuid4()), index=True)
+    tracking_token: str = Field(default_factory=lambda: str(__import__('uuid').uuid4()), index=True, unique=True)
 
 
 class Listing(SQLModel, table=True):
+    __tablename__ = "listing"
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     inquiry_id: int = Field(foreign_key="inquiry.id", index=True)
-    source: Source
-    source_url: str
-    vin: str = ""
+    source: Source = Field(index=True)
+    source_url: str = Field(unique=True)
+    vin: str = Field(default="", index=True)
     title: str = ""
-    year: Optional[int] = None
-    make: str = ""
-    model: str = ""
+    year: Optional[int] = Field(default=None, index=True)
+    make: str = Field(default="", index=True)
+    model: str = Field(default="", index=True)
     mileage: Optional[int] = None
     damage_primary: str = ""
     damage_secondary: str = ""
@@ -76,24 +86,29 @@ class Listing(SQLModel, table=True):
     current_bid_usd: Optional[float] = None
     buy_now_usd: Optional[float] = None
     photos_json: str = "[]"
-    scraped_at: datetime = Field(default_factory=datetime.utcnow)
+    scraped_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     ai_repair_estimate_usd_low: Optional[float] = None
     ai_repair_estimate_usd_high: Optional[float] = None
-    ai_damage_score: Optional[int] = None
+    ai_damage_score: Optional[int] = Field(default=None, index=True)
     ai_notes: str = ""
     ai_raw_json: str = ""
-    total_cost_pln: Optional[float] = None
+    total_cost_pln: Optional[float] = Field(default=None, index=True)
     recommended_rank: Optional[int] = None
-    excluded: bool = False
+    excluded: bool = Field(default=False, index=True)
 
 
 class Report(SQLModel, table=True):
+    __tablename__ = "report"
+    __table_args__ = (
+        {"sqlite_autoincrement": True},
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     inquiry_id: int = Field(foreign_key="inquiry.id", index=True)
     html_body: str = ""
     selected_listing_ids: str = "[]"
-    status: ReportStatus = ReportStatus.draft
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    status: ReportStatus = Field(default=ReportStatus.draft, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     sent_at: Optional[datetime] = None
     gmail_draft_id: str = ""
     subject: str = ""
