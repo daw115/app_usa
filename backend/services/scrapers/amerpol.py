@@ -30,7 +30,7 @@ async def search(criteria: SearchCriteria) -> list[ScrapedListing]:
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            kwargs = {}
+            kwargs = {"ignore_https_errors": True}
             if state_file.exists():
                 kwargs["storage_state"] = str(state_file)
             context = await browser.new_context(**kwargs)
