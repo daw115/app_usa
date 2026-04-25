@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 
-from fastapi import APIRouter, BackgroundTasks, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from backend.db import engine
 from backend.models import DamageTolerance, Inquiry, InquiryStatus, Listing
@@ -15,6 +16,23 @@ from backend.models import DamageTolerance, Inquiry, InquiryStatus, Listing
 router = APIRouter()
 templates = Jinja2Templates(directory="frontend")
 limiter = Limiter(key_func=get_remote_address)
+
+# Email validation regex
+EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+
+def validate_email(email: str) -> bool:
+    """Validate email format"""
+    return bool(EMAIL_REGEX.match(email)) and len(email) <= 254
+
+def sanitize_string(s: str, max_length: int = 500) -> str:
+    """Sanitize user input - remove potential SQL injection patterns"""
+    if not s:
+        return ""
+    # Strip whitespace and limit length
+    s = s.strip()[:max_length]
+    # Remove null bytes and control characters
+    s = ''.join(char for char in s if ord(char) >= 32 or char in '\n\r\t')
+    return s
 
 
 @router.get("/form", response_class=HTMLResponse)
@@ -24,6 +42,9 @@ async def form_page(request: Request):
 
 @router.get("/track/{inquiry_id}/{token}", response_class=HTMLResponse)
 async def track_inquiry(request: Request, inquiry_id: int, token: str):
+    # Sanitize token to prevent injection
+    token = sanitize_string(token, 100)
+
     with Session(engine) as s:
         inquiry = s.get(Inquiry, inquiry_id)
         if not inquiry or inquiry.tracking_token != token:
@@ -74,6 +95,24 @@ async def submit_inquiry(
     damage_tolerance: str = Form("light"),
     extra_notes: str = Form(""),
 ):
+    # Validate and sanitize inputs
+    client_name = sanitize_string(client_name, 200)
+    client_email = sanitize_string(client_email, 254)
+    client_phone = sanitize_string(client_phone, 50)
+
+    # Validate required fields
+    if not client_name or len(client_name) < 2:
+        raise HTTPException(400, "Imię i nazwisko jest wymagane (min. 2 znaki)")
+
+    if not client_email or not validate_email(client_email):
+        raise HTTPException(400, "Nieprawidłowy adres email")
+
+    # Validate damage_tolerance enum
+    try:
+        damage_tolerance_enum = DamageTolerance(damage_tolerance)
+    except ValueError:
+        raise HTTPException(400, "Nieprawidłowa wartość tolerancji uszkodzeń")
+
     def to_int(v: str):
         try:
             return int(v) if v.strip() else None
@@ -81,20 +120,20 @@ async def submit_inquiry(
             return None
 
     inquiry = Inquiry(
-        client_name=client_name.strip(),
-        client_email=client_email.strip(),
-        client_phone=client_phone.strip(),
-        make=make.strip(),
-        model=model.strip(),
+        client_name=client_name,
+        client_email=client_email,
+        client_phone=client_phone,
+        make=sanitize_string(make, 100),
+        model=sanitize_string(model, 100),
         year_from=to_int(year_from),
         year_to=to_int(year_to),
         budget_pln=to_int(budget_pln),
         mileage_max=to_int(mileage_max),
-        body_type=body_type.strip(),
-        fuel=fuel.strip(),
-        transmission=transmission.strip(),
-        damage_tolerance=DamageTolerance(damage_tolerance),
-        extra_notes=extra_notes.strip(),
+        body_type=sanitize_string(body_type, 50),
+        fuel=sanitize_string(fuel, 50),
+        transmission=sanitize_string(transmission, 50),
+        damage_tolerance=damage_tolerance_enum,
+        extra_notes=sanitize_string(extra_notes, 1000),
         status=InquiryStatus.new,
     )
     with Session(engine) as s:
