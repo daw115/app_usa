@@ -21,7 +21,7 @@ class CacheEntry:
         return time.time() > self.expires_at
 
 
-class SimpleCache:
+class InMemoryCache:
     def __init__(self):
         self._store: dict[str, CacheEntry] = {}
         self._hits = 0
@@ -79,11 +79,14 @@ class SimpleCache:
         }
 
 
+# Backwards-compatible alias
+SimpleCache = InMemoryCache
+
 # Global cache instance
-_cache = SimpleCache()
+_cache = InMemoryCache()
 
 
-def get_cache() -> SimpleCache:
+def get_cache() -> InMemoryCache:
     """Get global cache instance."""
     return _cache
 

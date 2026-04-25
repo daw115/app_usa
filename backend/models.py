@@ -114,6 +114,19 @@ class Report(SQLModel, table=True):
     subject: str = ""
 
 
+class ScraperRun(SQLModel, table=True):
+    """One row per scraper invocation. Used to enforce per-source daily rate limit."""
+    __tablename__ = "scraper_run"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source: Source = Field(index=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    inquiry_id: Optional[int] = Field(default=None, foreign_key="inquiry.id", index=True)
+    success: bool = True
+    error: str = ""
+    results_count: int = 0
+
+
 class Settings(SQLModel, table=True):
     id: Optional[int] = Field(default=1, primary_key=True)
     transport_usd: float = 1500.0
