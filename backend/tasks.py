@@ -7,10 +7,13 @@ from typing import Any
 
 from sqlmodel import Session, select
 
+from backend.config import config
 from backend.db import engine
 from backend.models import Inquiry, InquiryStatus, Listing, Report, Settings, Source
+from backend.models import Source
 from backend.services import analyzer, synthesizer
 from backend.services.pricing import calculate, fetch_nbp_usd_rate
+from backend.services.rate_limit import RateLimitExceeded, check_and_reserve, mark_complete
 from backend.services.scrapers import amerpol, iaai
 from backend.services.scrapers import copart_scraperapi as copart
 from backend.services.scrapers.base import SearchCriteria, ScrapedListing
@@ -122,20 +125,36 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             await _refresh_usd_rate(s)
             criteria = _criteria(inquiry)
 
-        # Parallel scraping with asyncio.gather
-        async def scrape_source(mod):
+        # Parallel scraping with rate limiting + per-source timeout
+        SCRAPER_TIMEOUT_S = 90  # hard cap per source (Playwright can hang)
+
+        async def scrape_source(mod, source: Source):
             try:
-                scraped = await mod.search(criteria)
+                run = check_and_reserve(source, inquiry_id=inquiry_id)
+            except RateLimitExceeded as e:
+                log.warning("Skipping %s: %s", source.value, e)
+                return []
+
+            try:
+                scraped = await asyncio.wait_for(
+                    mod.search(criteria), timeout=SCRAPER_TIMEOUT_S
+                )
                 log.info("%s returned %d results", mod.__name__, len(scraped))
+                mark_complete(run.id, success=True, results_count=len(scraped))
                 return scraped
+            except asyncio.TimeoutError:
+                log.error("scraper %s timed out after %ss", mod.__name__, SCRAPER_TIMEOUT_S)
+                mark_complete(run.id, success=False, error=f"timeout {SCRAPER_TIMEOUT_S}s")
+                return []
             except Exception as e:
                 log.exception("scraper %s failed: %s", mod.__name__, e)
+                mark_complete(run.id, success=False, error=str(e))
                 return []
 
         results = await asyncio.gather(
-            scrape_source(amerpol),
-            scrape_source(copart),
-            scrape_source(iaai),
+            scrape_source(amerpol, Source.amerpol),
+            scrape_source(copart, Source.copart),
+            scrape_source(iaai, Source.iaai),
         )
         all_scraped = [item for sublist in results for item in sublist]
 
@@ -170,8 +189,15 @@ async def run_search_pipeline(inquiry_id: int) -> None:
                     "vin": listing.vin,
                 }
                 try:
-                    result = await analyzer.analyze_listing(listing_data, photos)
+                    result = await asyncio.wait_for(
+                        analyzer.analyze_listing(listing_data, photos),
+                        timeout=config.ai_timeout_seconds,
+                    )
                     return (listing, result)
+                except asyncio.TimeoutError:
+                    log.error("analyzer timeout (%ss) for listing %s",
+                              config.ai_timeout_seconds, listing.id)
+                    return None
                 except Exception as e:
                     log.exception("analyzer failed for listing %s: %s", listing.id, e)
                     return None

@@ -26,14 +26,17 @@ This proves Railway is NOT using the new code with entrypoint.sh.
 ## Current Configuration
 
 ### Environment Variables (Set via Railway API)
-- ANTHROPIC_API_KEY: <REDACTED-ANTHROPIC-KEY>
-- ANTHROPIC_BASE_URL: https://api.quatarly.cloud/v1
-- TELEGRAM_BOT_TOKEN: <REDACTED-TELEGRAM-TOKEN>
-- TELEGRAM_CHAT_ID: <REDACTED-TELEGRAM-CHAT-ID>
-- EMAIL_PROVIDER: gmail
-- PORT: 8000
-- PUBLIC_FORM_BASE_URL: https://app-usa-production.up.railway.app
-- DATABASE_URL: (auto-set by Railway PostgreSQL)
+
+Wszystkie wartości w Railway → Variables. **Nigdy nie commituj sekretów do repo.**
+
+- `ANTHROPIC_API_KEY` — z console.anthropic.com (lub proxy z `ANTHROPIC_BASE_URL`)
+- `ANTHROPIC_BASE_URL` — opcjonalnie, jeśli używasz proxy
+- `TELEGRAM_BOT_TOKEN` — z @BotFather
+- `TELEGRAM_CHAT_ID` — chat ID Janka
+- `EMAIL_PROVIDER` — `gmail` lub `smtp`
+- `PORT` — ustawia Railway (nie nadpisuj)
+- `PUBLIC_FORM_BASE_URL` — np. `https://app-usa-production.up.railway.app`
+- `DATABASE_URL` — auto-set przez Railway PostgreSQL addon
 
 ### Files
 - `Dockerfile`: Uses entrypoint.sh with proper shell expansion
@@ -42,7 +45,7 @@ This proves Railway is NOT using the new code with entrypoint.sh.
 - `railway.json`: Specifies Nixpacks builder with health check
 
 ## Next Steps (Manual)
-1. Open Railway dashboard: https://railway.app/project/<REDACTED-PROJECT-ID>
+1. Open Railway dashboard: https://railway.app/project/42e7551e-a5fb-4b80-8970-aabe11b34d50
 2. Go to app-usa service settings
 3. Click "Clear Build Cache" or "Redeploy" with cache clearing option
 4. Wait for new deployment to complete
@@ -59,7 +62,5 @@ curl http://localhost:8000/health
 ```
 
 ## Railway Service IDs
-- Project ID: <REDACTED-PROJECT-ID>
-- Service ID (app-usa): <REDACTED-SERVICE-ID>
-- Service ID (Postgres): <REDACTED-PG-SERVICE-ID>
-- Environment ID (production): <REDACTED-ENV-ID>
+
+Project / Service / Environment IDs trzymaj poza repo (np. w `.env.local` lub w prywatnym notesie). IDs nie są tak wrażliwe jak tokeny, ale ułatwiają reconnaissance — lepiej ich nie publikować.

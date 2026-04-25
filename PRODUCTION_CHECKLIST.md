@@ -1,191 +1,162 @@
 # Production Readiness Checklist
 
+Stan: **2026-04-25**, branch `claude/sweet-allen-41aca0`. Cel: deployment Railway.
+
+## ⚠️ Najpierw: rotacja sekretów (BLOCKER)
+
+Sekrety wyciekły do gita w commicie `1a746ad` (pliki `RAILWAY_DEPLOYMENT_STATUS.md`, `RAILWAY_QUICK_START.md`). Wycieki w aktualnym HEAD są usunięte, **ale nadal są w historii**.
+
+### Akcja Janka/Dawida (wymagana ręcznie)
+
+1. **Zrotować klucze:**
+   - `ANTHROPIC_API_KEY` w panelu Anthropic / proxy (`api.quatarly.cloud`)
+   - `TELEGRAM_BOT_TOKEN` w @BotFather → `/revoke` → `/newtoken`
+2. **Wyczyścić git history** (jedna z opcji):
+   ```bash
+   # Opcja A: BFG (najszybsza)
+   bfg --replace-text passwords.txt   # plik z mapowaniem stary→***REMOVED***
+   git reflog expire --expire=now --all && git gc --prune=now --aggressive
+   git push --force-with-lease
+
+   # Opcja B: git-filter-repo
+   git filter-repo --replace-text passwords.txt
+   git push --force-with-lease
+   ```
+3. **Wpisać nowe klucze tylko w Railway → Variables**, nigdy do repo.
+4. **(Opcjonalnie) Powiadomić Anthropic / proxy provider** o wycieku starego klucza.
+
+---
+
 ## Environment Variables
 
-### Required
-- [x] `ANTHROPIC_API_KEY` - Claude API key (validated on startup)
-- [x] `TELEGRAM_BOT_TOKEN` - Telegram bot for notifications
-- [x] `TELEGRAM_CHAT_ID` - Telegram chat ID for Janek
-- [ ] `DATABASE_URL` - PostgreSQL connection string (Railway addon)
+### Wymagane
+- [x] `ANTHROPIC_API_KEY` — walidowane na startupie (RuntimeError jeśli puste)
+- [x] `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`
+- [x] `DATABASE_URL` — Railway PostgreSQL addon (auto)
 
-### Email Configuration
-- [x] `EMAIL_PROVIDER` - "gmail" or "smtp"
-- [ ] Gmail OAuth: `GMAIL_CLIENT_SECRETS`, `GMAIL_TOKEN_PATH`
-- [ ] SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
+### Email
+- [x] `EMAIL_PROVIDER=gmail` lub `smtp` (dispatcher w `backend/services/gmail.py:send_email`)
+- [ ] Gmail OAuth: `GMAIL_CLIENT_SECRETS`, `GMAIL_TOKEN_PATH` (musisz wgrać `gmail_client_secret.json` na Railway)
+- [x] SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
 
-### Optional
-- [ ] `ANTHROPIC_BASE_URL` - Custom API endpoint (if using proxy)
-- [ ] `SCRAPERAPI_KEY` - ScraperAPI for Copart fallback
-- [ ] Scraper credentials: `COPART_USERNAME`, `COPART_PASSWORD`, etc.
+### Observability
+- [x] `SENTRY_DSN` — opcjonalny, jeśli pusty → Sentry pominięty
+- [x] `ENVIRONMENT=production`
+- [x] `LOG_FORMAT=json` na Railway, `text` lokalnie
+
+### Resource limits (mają sensowne defaulty)
+- [x] `PLAYWRIGHT_TIMEOUT=30000`, `SCRAPER_PAGE_TIMEOUT=15000`
+- [x] `AI_TIMEOUT_SECONDS=60`, `AI_MAX_PHOTOS=6`
+- [x] `SCRAPER_DAILY_LIMIT=30`
+
+### Scraper auth (opcjonalne — sesje z `playwright_profiles/`)
+- [ ] `COPART_USERNAME/PASSWORD`, `IAAI_*`, `AMERPOL_*`
+- [ ] `SCRAPERAPI_KEY` (fallback dla Copart)
+
+---
 
 ## Database Migrations
 
 ```bash
-# Generate migration after model changes
-alembic revision --autogenerate -m "description"
+# Lokalnie (SQLite)
+DATABASE_URL=sqlite:///./app.db alembic upgrade head
 
-# Apply migrations
-alembic upgrade head
-
-# Rollback one migration
-alembic downgrade -1
+# Produkcja: entrypoint.sh wywołuje `alembic upgrade head` przed startem uvicorna.
 ```
+
+**Migracje (3):**
+1. `395befaef905_initial_schema.py` — schemat bazowy, **dialect-aware** (PG + SQLite).
+2. `2a9c1f3b8d44_add_missing_indexes.py` — indeksy zgodne z modelami + UNIQUE constraints.
+3. `3b7e2a4f9c11_add_scraper_run.py` — tabela rate-limitowania scraperów.
+
+---
 
 ## Security
 
 ### Rate Limiting
-- [x] `/inquiry` endpoint: 10 requests/hour per IP (slowapi)
-- [ ] Scraper rate limiting: max 30 searches/day per source (TODO: implement)
+- [x] `/inquiry` endpoint: 10 req/h per IP (slowapi)
+- [x] **Scraper rate limiting**: 30 wyszukiwań/dzień per source (ScraperRun + `services/rate_limit.py`)
 
-### Input Validation
-- [x] Form inputs sanitized (FastAPI Form validation)
-- [x] Email validation (pydantic EmailStr)
-- [ ] SQL injection protection (SQLModel parameterized queries)
-- [ ] XSS protection (Jinja2 auto-escaping enabled)
+### Sekrety
+- [x] `.env` w `.gitignore`
+- [x] `.env.example` z placeholderami (NIE z prawdziwymi wartościami)
+- [ ] Sekrety zrotowane i historia git wyczyszczona — **patrz wyżej**
 
-### Secrets Management
-- [x] `.env` file not committed (in .gitignore)
-- [x] `.env.example` provided for reference
-- [ ] Railway environment variables configured
+---
 
-## Error Handling
+## Error Handling & Health
 
-### Application Level
-- [x] Startup validation (ANTHROPIC_API_KEY required)
-- [x] Scraper failures don't crash pipeline (try/catch in tasks.py)
-- [x] Telegram notification errors logged (don't block main flow)
-- [ ] Sentry integration (optional, for production monitoring)
+- [x] Startup validation: `ANTHROPIC_API_KEY` required
+- [x] Per-scraper try/catch + `asyncio.wait_for` (90s timeout)
+- [x] AI analyzer: per-listing timeout (`config.ai_timeout_seconds`)
+- [x] Telegram errors logowane, nie blokują flow
+- [x] **Sentry** (jeśli `SENTRY_DSN` ustawione) — wszystkie 5xx + nieobsłużone wyjątki
 
-### Health Checks
-- [x] `/health` endpoint returns DB + API status
-- [x] Railway health check configured (checks `/health`)
+### Health check
+- [x] `/health` zwraca **HTTP 503** przy błędzie DB/API (Railway poprawnie wykryje fail)
+- [x] Railway healthcheck: `path=/health`, `timeout=300s`
+
+---
 
 ## Logging
 
-### Current Setup
-- [x] Python logging configured (INFO level)
-- [x] Format: `%(asctime)s %(levelname)s %(name)s — %(message)s`
-- [ ] Structured JSON logging for Railway (TODO: add python-json-logger)
+- [x] Format JSON na Railway (`LOG_FORMAT=json` + `python-json-logger`)
+- [x] Format tekstowy lokalnie
+- [x] `request_id` w każdym logu (middleware + factory)
+- [x] Request ID w response header `X-Request-ID`
 
-### Log Levels
-- Production: INFO
-- Development: DEBUG
-- Critical errors: ERROR with stack traces
+---
 
 ## Performance
 
-### Database
-- [x] SQLite for development
-- [ ] PostgreSQL for production (Railway addon)
-- [ ] Connection pooling (SQLAlchemy default)
-- [ ] Indexes on foreign keys (SQLModel auto-creates)
+- [x] PostgreSQL na produkcji (Railway addon), SQLite lokalnie
+- [x] Indeksy na FK + częstych filtrach (z migracji 2)
+- [x] Prompt caching dla analyzera (system prompt z `cache_control: ephemeral`)
+- [x] Równoległe scraping (`asyncio.gather` 3 źródeł)
+- [x] Równoległa analiza AI (`asyncio.gather` po listingach)
+- [x] Per-call timeouty: 90s scraper, 60s AI
+- [x] In-memory cache dla AI analizy (TTL 24h, klucz: VIN+photos hash)
 
-### AI API
-- [x] Prompt caching enabled (analyzer system prompt)
-- [x] Parallel scraping (asyncio.gather)
-- [ ] Request timeout: 30s for scrapers, 60s for AI
+---
 
-### Caching
-- [ ] Redis for session storage (optional, future enhancement)
-- [ ] CDN for static assets (optional, Tailwind CDN already used)
+## Deployment (Railway)
 
-## Monitoring
+### Konfiguracja
+- [x] `railway.json` — builder DOCKERFILE, healthcheckPath `/health`, restart on failure
+- [x] `Dockerfile` — Python 3.9-slim + Playwright + entrypoint
+- [x] `entrypoint.sh` — chmod +x w git, fallback `PORT=8000`, runs `alembic upgrade head` + uvicorn
+- [x] `nixpacks.toml` **usunięty** (kolizja z Dockerfile)
 
-### Metrics to Track
-- [ ] Request rate (/inquiry submissions per hour)
-- [ ] Pipeline success rate (inquiries → reports sent)
-- [ ] AI API latency (analyzer + synthesizer)
-- [ ] Scraper success rate (per source)
-- [ ] Error rate (5xx responses)
+### Pre-deploy
+- [x] `pytest tests/ backend/tests/` → 27 passed
+- [x] `alembic upgrade head` smoke test na SQLite ✅
+- [ ] Railway Variables ustawione (rotowane klucze!)
+- [ ] PostgreSQL addon podłączony
 
-### Alerting
-- [x] Telegram notifications for critical errors
-- [ ] Email alerts for pipeline failures (optional)
-- [ ] Sentry for exception tracking (optional)
+### Post-deploy
+- [ ] `curl https://<app>.up.railway.app/health` → `{"ok":true,...}`
+- [ ] Submit test inquiry przez `/form`
+- [ ] Trigger search w dashboardzie → sprawdzić czy `scraper_run` rośnie
+- [ ] Sprawdzić Sentry dashboard (jeśli skonfigurowane)
+- [ ] Telegram: powiadomienie o nowym inquiry
 
-## Deployment
+---
 
-### Pre-Deploy Checklist
-- [x] All tests passing (`pytest tests/ -q`)
-- [x] Migrations generated (`alembic revision --autogenerate`)
-- [ ] Environment variables set in Railway
-- [ ] Database backup (if migrating from SQLite)
-- [ ] Gmail OAuth credentials uploaded (if using Gmail)
+## Outstanding Work (post-launch)
 
-### Railway Configuration
+1. **Scraper selektory** — Copart/IAAI mogą wymagać kalibracji na żywej stronie (test_copart_photos.py)
+2. **Backup PostgreSQL** — Railway robi automatyczne snapshoty, ale warto eksportować weekly do osobnego storage
+3. **Klient portal** `/track/{id}/{token}` — endpoint i template (jest tracking_token w modelu)
+4. **Dashboard enhancements** — filtry/sortowanie, porównywanie aut
+5. **Analytics** — `/analytics` dla Janka
+
+---
+
+## Rollback
+
 ```bash
-# Build command (railway.json)
-pip install -r requirements.txt && playwright install chromium
+# Railway: rollback do poprzedniego deploymentu w dashboardzie
 
-# Start command
-alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port $PORT
-
-# Health check
-GET /health (expect {"ok": true})
+# Lokalnie:
+alembic downgrade -1   # cofa ostatnią migrację
 ```
-
-### Post-Deploy Verification
-- [ ] `/health` returns 200 OK
-- [ ] Submit test inquiry via `/form`
-- [ ] Trigger search in dashboard
-- [ ] Verify listings have photos
-- [ ] Generate test report
-- [ ] Create Gmail draft (or send via SMTP)
-- [ ] Check Telegram notifications
-
-## Rollback Plan
-
-### If deployment fails:
-1. Check Railway logs for errors
-2. Verify environment variables
-3. Roll back to previous deployment (Railway UI)
-4. If DB migration failed: `alembic downgrade -1`
-
-### If production issues:
-1. Check `/health` endpoint
-2. Review Railway logs
-3. Verify Anthropic API status
-4. Check scraper storage_state files
-5. Test Gmail/SMTP connectivity
-
-## Maintenance
-
-### Weekly
-- [ ] Review error logs
-- [ ] Check scraper success rates
-- [ ] Monitor AI API costs (Anthropic dashboard)
-
-### Monthly
-- [ ] Update dependencies (`pip list --outdated`)
-- [ ] Review and archive old inquiries
-- [ ] Backup database
-- [ ] Rotate API keys (if policy requires)
-
-### As Needed
-- [ ] Update scraper selectors (when giełdy change layout)
-- [ ] Refresh Gmail OAuth token (expires after 6 months)
-- [ ] Update Playwright browsers (`playwright install chromium`)
-
-## Security Audit
-
-### Before Production
-- [ ] Review all environment variables
-- [ ] Audit third-party dependencies (`pip-audit`)
-- [ ] Check for exposed secrets in git history
-- [ ] Verify HTTPS enabled (Railway default)
-- [ ] Test rate limiting effectiveness
-- [ ] Review CORS settings (if adding frontend API)
-
-## Documentation
-
-### Updated Files
-- [x] README.md - Setup and configuration
-- [x] TESTING.md - Test procedures
-- [x] CLAUDE.md - Architecture and guidelines
-- [x] RAILWAY_DEPLOYMENT.md - Deployment guide
-- [x] PRODUCTION_CHECKLIST.md - This file
-
-### Missing Documentation
-- [ ] API documentation (if exposing public API)
-- [ ] Runbook for common issues
-- [ ] Disaster recovery procedures

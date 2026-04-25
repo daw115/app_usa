@@ -17,17 +17,19 @@
 W Railway → Variables, dodaj:
 
 ```
-ANTHROPIC_API_KEY=<REDACTED-ANTHROPIC-KEY>
-ANTHROPIC_BASE_URL=https://api.quatarly.cloud/v1
-TELEGRAM_BOT_TOKEN=<REDACTED-TELEGRAM-TOKEN>
-TELEGRAM_CHAT_ID=<REDACTED-TELEGRAM-CHAT-ID>
+ANTHROPIC_API_KEY=<wklej z console.anthropic.com>
+# ANTHROPIC_BASE_URL=<opcjonalnie, jeśli używasz proxy>
+TELEGRAM_BOT_TOKEN=<z @BotFather>
+TELEGRAM_CHAT_ID=<chat ID Janka>
 EMAIL_PROVIDER=smtp
 SMTP_HOST=outbound.att.net
 SMTP_PORT=465
-SMTP_USER=your-email@att.net
-SMTP_PASSWORD=your-password
-SMTP_FROM=your-email@att.net
+SMTP_USER=<twój email>
+SMTP_PASSWORD=<hasło aplikacji>
+SMTP_FROM=<twój email>
 ```
+
+**⚠️ Nigdy nie commituj sekretów do repo.** Wpisuj wartości tylko w Railway → Variables.
 
 ## 4. Skonfiguruj Build & Start Commands
 
