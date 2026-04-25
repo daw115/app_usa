@@ -24,34 +24,38 @@ def upgrade() -> None:
 
     # Check and create enum types using DO blocks
     conn.execute(sa.text("""
-        DO $$ BEGIN
-            CREATE TYPE source AS ENUM ('copart', 'iaai', 'amerpol', 'auctiongate', 'manual');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'source') THEN
+                CREATE TYPE source AS ENUM ('copart', 'iaai', 'amerpol', 'auctiongate', 'manual');
+            END IF;
         END $$;
     """))
 
     conn.execute(sa.text("""
-        DO $$ BEGIN
-            CREATE TYPE damagetolerance AS ENUM ('none', 'light', 'medium', 'heavy');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'damagetolerance') THEN
+                CREATE TYPE damagetolerance AS ENUM ('none', 'light', 'medium', 'heavy');
+            END IF;
         END $$;
     """))
 
     conn.execute(sa.text("""
-        DO $$ BEGIN
-            CREATE TYPE inquirystatus AS ENUM ('new', 'searching', 'analyzing', 'ready', 'sent', 'archived');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'inquirystatus') THEN
+                CREATE TYPE inquirystatus AS ENUM ('new', 'searching', 'analyzing', 'ready', 'sent', 'archived');
+            END IF;
         END $$;
     """))
 
     conn.execute(sa.text("""
-        DO $$ BEGIN
-            CREATE TYPE reportstatus AS ENUM ('draft', 'approved', 'sent');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'reportstatus') THEN
+                CREATE TYPE reportstatus AS ENUM ('draft', 'approved', 'sent');
+            END IF;
         END $$;
     """))
 
