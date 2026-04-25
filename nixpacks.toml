@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python39", "playwright-driver-chromium"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt", "playwright install chromium"]
+
+[start]
+cmd = "./entrypoint.sh"
