@@ -14,9 +14,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium
+# Install Playwright browsers (install system deps first, then browser binary)
 RUN playwright install-deps chromium
+RUN playwright install chromium
 
 # Copy application code
 COPY . .
