@@ -36,7 +36,9 @@ async def _send(text: str, reply_markup: dict | None = None) -> None:
 
 
 def _dashboard_url(path: str) -> str:
-    return f"http://localhost:8000{path}"
+    from backend.config import config
+    base = config.public_form_base_url
+    return f"{base}{path}"
 
 
 async def notify_new_inquiry(inquiry_id: int) -> None:
