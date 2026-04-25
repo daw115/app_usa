@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlmodel import Session
 
 from backend.db import engine
-from backend.models import DamageTolerance, Inquiry, InquiryStatus
+from backend.models import DamageTolerance, Inquiry, InquiryStatus, Listing
 
 router = APIRouter()
 templates = Jinja2Templates(directory="frontend")
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/form", response_class=HTMLResponse)
@@ -17,7 +22,40 @@ async def form_page(request: Request):
     return templates.TemplateResponse("form.html", {"request": request, "submitted": False})
 
 
+@router.get("/track/{inquiry_id}/{token}", response_class=HTMLResponse)
+async def track_inquiry(request: Request, inquiry_id: int, token: str):
+    with Session(engine) as s:
+        inquiry = s.get(Inquiry, inquiry_id)
+        if not inquiry or inquiry.tracking_token != token:
+            raise HTTPException(404, "Zapytanie nie znalezione")
+
+        listings = s.exec(
+            select(Listing)
+            .where(Listing.inquiry_id == inquiry_id)
+            .where(Listing.excluded == False)
+        ).all()
+
+        listings_data = []
+        for l in listings:
+            photos = json.loads(l.photos_json or "[]")
+            listings_data.append({
+                "year": l.year,
+                "make": l.make,
+                "model": l.model,
+                "source": l.source,
+                "photos": photos[:1],
+            })
+
+    return templates.TemplateResponse("track.html", {
+        "request": request,
+        "inquiry": inquiry,
+        "listings": listings_data,
+        "listings_count": len(listings_data),
+    })
+
+
 @router.post("/inquiry", response_class=HTMLResponse)
+@limiter.limit("10/hour")
 async def submit_inquiry(
     request: Request,
     background: BackgroundTasks,

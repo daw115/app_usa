@@ -1,0 +1,61 @@
+{% extends "dashboard/_base.html" %}
+{% block title %}Tracking - Zapytanie #{{ inquiry.id }}{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <h1 class="text-2xl font-semibold mb-2">Status zapytania #{{ inquiry.id }}</h1>
+  <p class="text-slate-600 mb-6">{{ inquiry.make }} {{ inquiry.model }}</p>
+
+  <div class="bg-white rounded-xl shadow p-6 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      {% set steps = [
+        ('new', 'Nowe'),
+        ('searching', 'Wyszukiwanie'),
+        ('analyzing', 'Analiza'),
+        ('ready', 'Gotowe')
+      ] %}
+      {% for step_status, step_label in steps %}
+        {% set is_current = inquiry.status.value == step_status %}
+        {% set is_past = ['new', 'searching', 'analyzing', 'ready'].index(inquiry.status.value) > ['new', 'searching', 'analyzing', 'ready'].index(step_status) if inquiry.status.value in ['new', 'searching', 'analyzing', 'ready', 'sent'] else False %}
+        <div class="flex-1 text-center">
+          <div class="w-8 h-8 mx-auto rounded-full {{ 'bg-emerald-500 text-white' if is_current or is_past else 'bg-slate-200' }} flex items-center justify-center text-sm font-medium">
+            {{ loop.index }}
+          </div>
+          <div class="text-xs mt-2 {{ 'font-medium' if is_current else 'text-slate-500' }}">{{ step_label }}</div>
+        </div>
+        {% if not loop.last %}
+        <div class="w-12 h-0.5 {{ 'bg-emerald-500' if is_past else 'bg-slate-200' }} mt-4"></div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {% if inquiry.status.value == 'new' %}
+    <p class="text-sm text-slate-600 text-center mt-4">Zapytanie zostało przyjęte. Wkrótce rozpoczniemy wyszukiwanie.</p>
+    {% elif inquiry.status.value == 'searching' %}
+    <p class="text-sm text-slate-600 text-center mt-4">Przeszukujemy giełdy Copart, IAAI i Amerpol...</p>
+    {% elif inquiry.status.value == 'analyzing' %}
+    <p class="text-sm text-slate-600 text-center mt-4">Analizujemy znalezione auta. Szacowany czas: ~10 minut.</p>
+    {% elif inquiry.status.value == 'ready' %}
+    <p class="text-sm text-emerald-600 text-center mt-4">✓ Raport jest gotowy! Wkrótce otrzymasz email.</p>
+    {% elif inquiry.status.value == 'sent' %}
+    <p class="text-sm text-emerald-600 text-center mt-4">✓ Raport został wysłany na {{ inquiry.client_email }}</p>
+    {% endif %}
+  </div>
+
+  {% if listings_count > 0 %}
+  <div class="bg-white rounded-xl shadow p-6">
+    <h2 class="font-semibold mb-3">Znalezione auta ({{ listings_count }})</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {% for listing in listings %}
+      <div class="border rounded-lg p-4">
+        {% if listing.photos %}
+        <img src="{{ listing.photos[0] }}" class="w-full h-32 object-cover rounded mb-2" loading="lazy">
+        {% endif %}
+        <div class="text-sm font-medium">{{ listing.year }} {{ listing.make }} {{ listing.model }}</div>
+        <div class="text-xs text-slate-500 mt-1">{{ listing.source.value.upper() }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

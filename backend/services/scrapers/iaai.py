@@ -69,11 +69,33 @@ async def search(criteria: SearchCriteria) -> list[ScrapedListing]:
 
 
 async def _enrich_detail(page, listing: ScrapedListing) -> None:
-    vin_el = await page.query_selector("[data-testid='vehicle-vin'], .heading-details-value")
-    if vin_el:
-        listing.vin = (await vin_el.inner_text()).strip().split()[0][:17]
-    imgs = await page.query_selector_all("img[src*='vis.iaai.com'], img.gallery-img")
-    for img in imgs[:10]:
-        src = await img.get_attribute("src")
-        if src and src.startswith("http"):
-            listing.photos.append(src)
+    await page.wait_for_timeout(2000)
+
+    # VIN - multiple selectors
+    for sel in ["[data-testid='vehicle-vin']", ".heading-details-value", "span:has-text('VIN')", ".vin-value"]:
+        vin_el = await page.query_selector(sel)
+        if vin_el:
+            vin_text = (await vin_el.inner_text()).strip()
+            listing.vin = vin_text.split()[0][:17] if vin_text else ""
+            if listing.vin:
+                break
+
+    # Photos - multiple strategies
+    # Strategy 1: Gallery images
+    imgs = await page.query_selector_all("img[src*='vis.iaai.com'], img.gallery-img, img[data-src*='vis.iaai.com']")
+    for img in imgs[:15]:
+        src = await img.get_attribute("src") or await img.get_attribute("data-src") or ""
+        if src and ("vis.iaai.com" in src or "iaai.com" in src) and src.startswith("http"):
+            # Convert thumbnails to full size if possible
+            full_src = src.replace("_thb.", "_ful.").replace("_thumb.", "_full.")
+            if full_src not in listing.photos:
+                listing.photos.append(full_src)
+
+    # Strategy 2: Check for image URLs in page JSON/data
+    if len(listing.photos) < 3:
+        content = await page.content()
+        import re
+        urls = re.findall(r'https://[^"\'>\s]*vis\.iaai\.com[^"\'>\s]+\.jpg', content)
+        for url in urls[:15]:
+            if url not in listing.photos:
+                listing.photos.append(url)

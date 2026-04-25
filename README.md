@@ -24,9 +24,34 @@ python -m backend.services.scrapers.login_helper amerpol
 python -m backend.services.scrapers.login_helper copart
 python -m backend.services.scrapers.login_helper iaai
 
-# 4. OAuth do Gmaila — pobierz gmail_client_secret.json z Google Cloud
-#    (OAuth 2.0 Client ID → Desktop app), umieść w katalogu projektu.
-#    Pierwsze uruchomienie "Utwórz draft" otworzy konsent w przeglądarce.
+## Email Configuration
+
+AutoScout US supports two email providers:
+
+### Gmail OAuth (default)
+```bash
+# 1. Download OAuth credentials from Google Cloud Console
+#    (OAuth 2.0 Client ID → Desktop app)
+# 2. Save as gmail_client_secret.json in project root
+# 3. Set in .env:
+EMAIL_PROVIDER=gmail
+
+# 4. First draft creation will open browser for OAuth consent
+# 5. Token saved to gmail_token.json (valid 6 months)
+```
+
+### SMTP (e.g., ATT Mail)
+```bash
+# Set in .env:
+EMAIL_PROVIDER=smtp
+SMTP_HOST=outbound.att.net
+SMTP_PORT=465
+SMTP_USER=your-email@att.net
+SMTP_PASSWORD=your-password
+SMTP_FROM=your-email@att.net
+```
+
+**Note:** Gmail creates drafts (manual send), SMTP sends directly.
 
 # 5. Start
 uvicorn backend.main:app --reload

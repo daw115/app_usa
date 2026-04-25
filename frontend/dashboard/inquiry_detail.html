@@ -58,7 +58,57 @@
 </section>
 
 <section class="bg-white rounded-xl shadow p-6 mb-6">
-  <h2 class="font-semibold mb-3">Kandydaci ({{ listings|length }})</h2>
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="font-semibold">Kandydaci ({{ listings|length }})</h2>
+    <details class="relative">
+      <summary class="cursor-pointer text-sm text-slate-600 hover:text-slate-900">🔍 Filtry i sortowanie</summary>
+      <form method="get" class="absolute right-0 mt-2 bg-white border rounded-lg shadow-lg p-4 w-80 z-10 space-y-3">
+        <div>
+          <label class="text-xs text-slate-600">Źródło</label>
+          <select name="source" class="w-full border rounded px-2 py-1 text-sm">
+            <option value="">Wszystkie</option>
+            {% for s in sources %}
+            <option value="{{ s }}" {{ 'selected' if filters.source == s else '' }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-slate-600">Szkoda min</label>
+            <input type="number" name="damage_min" min="1" max="10" value="{{ filters.damage_min or '' }}" placeholder="1" class="w-full border rounded px-2 py-1 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Szkoda max</label>
+            <input type="number" name="damage_max" min="1" max="10" value="{{ filters.damage_max or '' }}" placeholder="10" class="w-full border rounded px-2 py-1 text-sm">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs text-slate-600">Cena min (PLN)</label>
+            <input type="number" name="price_min" step="1000" value="{{ filters.price_min or '' }}" placeholder="0" class="w-full border rounded px-2 py-1 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Cena max (PLN)</label>
+            <input type="number" name="price_max" step="1000" value="{{ filters.price_max or '' }}" placeholder="200000" class="w-full border rounded px-2 py-1 text-sm">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-slate-600">Sortowanie</label>
+          <select name="sort_by" class="w-full border rounded px-2 py-1 text-sm">
+            <option value="rank" {{ 'selected' if filters.sort_by == 'rank' else '' }}>Rekomendacja</option>
+            <option value="price_asc" {{ 'selected' if filters.sort_by == 'price_asc' else '' }}>Cena rosnąco</option>
+            <option value="price_desc" {{ 'selected' if filters.sort_by == 'price_desc' else '' }}>Cena malejąco</option>
+            <option value="damage_asc" {{ 'selected' if filters.sort_by == 'damage_asc' else '' }}>Szkoda rosnąco</option>
+            <option value="damage_desc" {{ 'selected' if filters.sort_by == 'damage_desc' else '' }}>Szkoda malejąco</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button type="submit" class="flex-1 bg-slate-900 text-white px-3 py-2 rounded text-sm hover:bg-slate-800">Zastosuj</button>
+          <a href="/inquiry/{{ inquiry.id }}" class="flex-1 text-center border px-3 py-2 rounded text-sm hover:bg-slate-50">Wyczyść</a>
+        </div>
+      </form>
+    </details>
+  </div>
   {% if not listings %}
     <div class="text-slate-500 text-sm">Brak — uruchom wyszukiwanie lub dodaj URL ręcznie.</div>
   {% else %}

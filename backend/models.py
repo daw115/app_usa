@@ -55,6 +55,7 @@ class Inquiry(SQLModel, table=True):
     damage_tolerance: DamageTolerance = DamageTolerance.light
     extra_notes: str = ""
     status: InquiryStatus = Field(default=InquiryStatus.new, index=True)
+    tracking_token: str = Field(default_factory=lambda: str(__import__('uuid').uuid4()), index=True)
 
 
 class Listing(SQLModel, table=True):
@@ -109,3 +110,4 @@ class Settings(SQLModel, table=True):
     repair_safety_pct: float = 0.25
     usd_pln_rate: float = 4.00
     auto_usd_rate: bool = True
+    auto_search_enabled: bool = False

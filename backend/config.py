@@ -15,6 +15,13 @@ class Config(BaseSettings):
     public_form_base_url: str = "http://localhost:8000"
     db_path: str = "./app.db"
 
+    email_provider: str = "gmail"
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+
     copart_username: str = ""
     copart_password: str = ""
     iaai_username: str = ""

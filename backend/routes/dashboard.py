@@ -35,16 +35,52 @@ async def index(request: Request, status: str | None = None):
 
 
 @router.get("/inquiry/{inquiry_id}", response_class=HTMLResponse)
-async def inquiry_detail(request: Request, inquiry_id: int):
+async def inquiry_detail(
+    request: Request,
+    inquiry_id: int,
+    source: str | None = None,
+    damage_min: int | None = None,
+    damage_max: int | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    sort_by: str = "rank",
+):
     with Session(engine) as s:
         inquiry = s.get(Inquiry, inquiry_id)
         if not inquiry:
             raise HTTPException(404)
-        listings = s.exec(
-            select(Listing).where(Listing.inquiry_id == inquiry_id).order_by(
-                Listing.recommended_rank.is_(None), Listing.recommended_rank
+
+        # Base query
+        q = select(Listing).where(Listing.inquiry_id == inquiry_id)
+
+        # Apply filters
+        if source:
+            q = q.where(Listing.source == Source(source))
+        if damage_min is not None:
+            q = q.where(Listing.ai_damage_score >= damage_min)
+        if damage_max is not None:
+            q = q.where(Listing.ai_damage_score <= damage_max)
+        if price_min is not None:
+            q = q.where(Listing.total_cost_pln >= price_min)
+        if price_max is not None:
+            q = q.where(Listing.total_cost_pln <= price_max)
+
+        # Apply sorting
+        if sort_by == "price_asc":
+            q = q.order_by(Listing.total_cost_pln.asc())
+        elif sort_by == "price_desc":
+            q = q.order_by(Listing.total_cost_pln.desc())
+        elif sort_by == "damage_asc":
+            q = q.order_by(Listing.ai_damage_score.asc())
+        elif sort_by == "damage_desc":
+            q = q.order_by(Listing.ai_damage_score.desc())
+        else:  # rank (default)
+            q = q.order_by(
+                Listing.recommended_rank.is_(None),
+                Listing.recommended_rank
             )
-        ).all()
+
+        listings = s.exec(q).all()
         reports = s.exec(select(Report).where(Report.inquiry_id == inquiry_id).order_by(Report.created_at.desc())).all()
 
     listings_with_photos = []
@@ -60,6 +96,15 @@ async def inquiry_detail(request: Request, inquiry_id: int):
         "inquiry": inquiry,
         "listings": listings_with_photos,
         "reports": reports,
+        "filters": {
+            "source": source,
+            "damage_min": damage_min,
+            "damage_max": damage_max,
+            "price_min": price_min,
+            "price_max": price_max,
+            "sort_by": sort_by,
+        },
+        "sources": [s.value for s in Source],
     })
 
 
@@ -215,20 +260,20 @@ async def report_save(report_id: int, subject: str = Form(...), html_body: str =
 
 @router.post("/report/{report_id}/draft_to_gmail")
 async def report_to_gmail(report_id: int):
-    from backend.services.gmail import create_draft
+    from backend.services.gmail import send_email
     with Session(engine) as s:
         report = s.get(Report, report_id)
         if not report:
             raise HTTPException(404)
         inquiry = s.get(Inquiry, report.inquiry_id)
     try:
-        draft_id = create_draft(inquiry.client_email, report.subject, report.html_body)
+        result_id = send_email(inquiry.client_email, report.subject, report.html_body)
     except Exception as e:
-        log.exception("gmail draft failed")
-        raise HTTPException(500, f"Gmail draft failed: {e}")
+        log.exception("email send failed")
+        raise HTTPException(500, f"Email send failed: {e}")
     with Session(engine) as s:
         report = s.get(Report, report_id)
-        report.gmail_draft_id = draft_id
+        report.gmail_draft_id = result_id
         report.status = ReportStatus.approved
         s.add(report)
         s.commit()
@@ -252,6 +297,140 @@ async def mark_sent(report_id: int):
     return RedirectResponse(f"/inquiry/{report.inquiry_id}", status_code=303)
 
 
+@router.get("/analytics", response_class=HTMLResponse)
+async def analytics(request: Request, period: str = "30"):
+    from datetime import datetime, timedelta
+    import csv
+    from io import StringIO
+
+    with Session(engine) as s:
+        # Calculate date range
+        if period == "all":
+            date_from = None
+            period_label = "all time"
+        else:
+            days = int(period)
+            date_from = datetime.utcnow() - timedelta(days=days)
+            period_label = f"{days} days"
+
+        # Base query
+        q = select(Inquiry)
+        if date_from:
+            q = q.where(Inquiry.created_at >= date_from)
+
+        inquiries = s.exec(q).all()
+
+        # Calculate stats
+        total = len(inquiries)
+        sent = len([i for i in inquiries if i.status == InquiryStatus.sent])
+        conversion = round((sent / total * 100) if total > 0 else 0, 1)
+
+        # Average cost and damage
+        listings_q = select(Listing)
+        if date_from:
+            listings_q = listings_q.join(Inquiry).where(Inquiry.created_at >= date_from)
+
+        all_listings = s.exec(listings_q).all()
+        costs = [l.total_cost_pln for l in all_listings if l.total_cost_pln]
+        damages = [l.ai_damage_score for l in all_listings if l.ai_damage_score]
+
+        avg_cost = sum(costs) / len(costs) if costs else None
+        avg_damage = sum(damages) / len(damages) if damages else None
+
+        # Top models
+        from collections import Counter
+        models = [(i.make, i.model) for i in inquiries if i.make and i.model]
+        top_models = [
+            {"make": make, "model": model, "count": count}
+            for (make, model), count in Counter(models).most_common(5)
+        ]
+
+        # Sources breakdown
+        sources_count = Counter([l.source.value for l in all_listings])
+        total_listings = len(all_listings)
+        sources = [
+            {
+                "source": source,
+                "count": count,
+                "percentage": round(count / total_listings * 100) if total_listings > 0 else 0
+            }
+            for source, count in sources_count.most_common()
+        ]
+
+        stats = {
+            "inquiries_count": total,
+            "conversion_rate": conversion,
+            "avg_cost_pln": avg_cost,
+            "avg_damage_score": avg_damage,
+            "top_models": top_models,
+            "sources": sources,
+        }
+
+    return templates.TemplateResponse("dashboard/analytics.html", {
+        "request": request,
+        "stats": stats,
+        "period": period_label,
+        "period_param": period,
+    })
+
+
+@router.get("/analytics/export")
+async def analytics_export(period: str = "30"):
+    from datetime import datetime, timedelta
+    import csv
+    from io import StringIO
+    from fastapi.responses import StreamingResponse
+
+    with Session(engine) as s:
+        # Calculate date range
+        if period == "all":
+            date_from = None
+        else:
+            days = int(period)
+            date_from = datetime.utcnow() - timedelta(days=days)
+
+        # Get inquiries with listings
+        q = select(Inquiry)
+        if date_from:
+            q = q.where(Inquiry.created_at >= date_from)
+
+        inquiries = s.exec(q).all()
+
+        # Generate CSV
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "inquiry_id", "client_name", "client_email", "created_at", "status",
+            "make", "model", "budget_pln", "listings_count", "avg_damage_score", "avg_cost_pln"
+        ])
+
+        for inq in inquiries:
+            listings = s.exec(select(Listing).where(Listing.inquiry_id == inq.id)).all()
+            damages = [l.ai_damage_score for l in listings if l.ai_damage_score]
+            costs = [l.total_cost_pln for l in listings if l.total_cost_pln]
+
+            writer.writerow([
+                inq.id,
+                inq.client_name,
+                inq.client_email,
+                inq.created_at.strftime("%Y-%m-%d %H:%M"),
+                inq.status.value,
+                inq.make,
+                inq.model,
+                inq.budget_pln or "",
+                len(listings),
+                round(sum(damages) / len(damages), 1) if damages else "",
+                round(sum(costs) / len(costs)) if costs else "",
+            ])
+
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=analytics_{period}days.csv"}
+        )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     with Session(engine) as s:
@@ -270,6 +449,7 @@ async def settings_save(
     repair_safety_pct: float = Form(...),
     usd_pln_rate: float = Form(...),
     auto_usd_rate: str = Form("off"),
+    auto_search_enabled: str = Form("off"),
 ):
     with Session(engine) as s:
         settings = s.exec(select(Settings).where(Settings.id == 1)).first()
@@ -282,6 +462,7 @@ async def settings_save(
         settings.repair_safety_pct = repair_safety_pct
         settings.usd_pln_rate = usd_pln_rate
         settings.auto_usd_rate = auto_usd_rate == "on"
+        settings.auto_search_enabled = auto_search_enabled == "on"
         s.add(settings)
         s.commit()
     return RedirectResponse("/settings", status_code=303)

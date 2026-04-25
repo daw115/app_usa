@@ -102,22 +102,32 @@ def _parse_usd(s: str) -> float | None:
 
 async def _enrich_detail(page, listing: ScrapedListing) -> None:
     # VIN
-    for sel in ["[data-uname='lotdetailVinvalue']", "span:has-text('VIN')", ".vin-number"]:
+    for sel in ["[data-uname='lotdetailVinvalue']", "span:has-text('VIN')", ".vin-number", "[data-testid='vin']"]:
         vin_el = await page.query_selector(sel)
         if vin_el:
             listing.vin = (await vin_el.inner_text()).strip()[:17]
             break
 
-    # Photos
-    await page.wait_for_timeout(2000)
-    imgs = await page.query_selector_all("img")
-    for img in imgs[:30]:
-        src = await img.get_attribute("src")
-        if src and "cs.copart.com" in src and "lpp" in src:
-            # Convert to full size
-            full_src = src.replace("_thb.jpg", "_ful.jpg").replace("_hrs.jpg", "_ful.jpg")
-            if full_src not in listing.photos:
+    # Photos - multiple strategies
+    await page.wait_for_timeout(3000)
+
+    # Strategy 1: Look for gallery/carousel images
+    gallery_imgs = await page.query_selector_all("img[src*='cs.copart.com'], img[data-src*='cs.copart.com']")
+    for img in gallery_imgs[:20]:
+        src = await img.get_attribute("src") or await img.get_attribute("data-src") or ""
+        if src and "cs.copart.com" in src:
+            full_src = src.replace("_thb.jpg", "_ful.jpg").replace("_hrs.jpg", "_ful.jpg").replace("_thn.jpg", "_ful.jpg")
+            if full_src not in listing.photos and "lpp" in full_src:
                 listing.photos.append(full_src)
+
+    # Strategy 2: Check for image URLs in page data/JSON
+    if len(listing.photos) < 3:
+        content = await page.content()
+        import re
+        urls = re.findall(r'https://cs\.copart\.com/[^"\'>\s]+_ful\.jpg', content)
+        for url in urls[:15]:
+            if url not in listing.photos:
+                listing.photos.append(url)
 
 
 def is_configured() -> bool:
