@@ -1,5 +1,6 @@
 FROM python:3.9-slim
 
+# Railway deployment - updated 2026-04-25
 WORKDIR /app
 
 # Install system dependencies for Playwright
