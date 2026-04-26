@@ -138,4 +138,4 @@ class Settings(SQLModel, table=True):
     repair_safety_pct: float = 0.25
     usd_pln_rate: float = 4.00
     auto_usd_rate: bool = True
-    auto_search_enabled: bool = False
+    auto_search_enabled: bool = True  # cron co 30min łapie zaległe inquiry (safety net)

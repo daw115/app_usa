@@ -224,7 +224,26 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             s.add(inquiry)
             s.commit()
 
-        log.info("pipeline finished inquiry=%s", inquiry_id)
+            ranked_count = sum(1 for l in listings if l.recommended_rank is not None)
+
+        log.info("pipeline finished inquiry=%s ranked=%d", inquiry_id, ranked_count)
+
+        # Auto-generate report if we have ranked candidates.
+        # Report is a draft for Janek — never auto-sent to client.
+        if ranked_count > 0:
+            try:
+                log.info("auto-generating report for inquiry=%s", inquiry_id)
+                await generate_report(inquiry_id)
+            except Exception as e:
+                log.exception("auto-generate_report failed inquiry=%s: %s", inquiry_id, e)
+                await notify_error(inquiry_id, f"raport auto-gen failed: {e}")
+        else:
+            log.info("inquiry=%s has 0 ranked listings, skipping report auto-gen", inquiry_id)
+            from backend.services.telegram_bot import _send
+            await _send(
+                f"⚠️ Pipeline #{inquiry_id} skończony, ale <b>0 pasujących aut</b> "
+                f"do wygenerowania raportu. Sprawdź filtry/scrapery."
+            )
     except Exception as e:
         log.exception("pipeline failed inquiry=%s: %s", inquiry_id, e)
         await notify_error(inquiry_id, str(e))

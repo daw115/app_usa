@@ -36,8 +36,7 @@ async def _send(text: str, reply_markup: dict | None = None) -> None:
 
 
 def _dashboard_url(path: str) -> str:
-    from backend.config import config
-    base = config.public_form_base_url
+    base = (config.public_form_base_url or "http://localhost:8000").rstrip("/")
     return f"{base}{path}"
 
 
