@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
 
 from sqlmodel import Session, select
 
+from backend.config import config
 from backend.db import engine
 from backend.models import Inquiry, InquiryStatus, Listing, Report, Settings, Source
+from backend.models import Source
 from backend.services import analyzer, synthesizer
 from backend.services.pricing import calculate, fetch_nbp_usd_rate
+from backend.services.rate_limit import RateLimitExceeded, check_and_reserve, mark_complete
 from backend.services.scrapers import amerpol, iaai
 from backend.services.scrapers import copart_scraperapi as copart
 from backend.services.scrapers.base import SearchCriteria, ScrapedListing
@@ -121,14 +125,38 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             await _refresh_usd_rate(s)
             criteria = _criteria(inquiry)
 
-        all_scraped: list[ScrapedListing] = []
-        for mod in (amerpol, copart, iaai):
+        # Parallel scraping with rate limiting + per-source timeout
+        SCRAPER_TIMEOUT_S = 180  # hard cap per source (Playwright can hang, Railway is slower)
+
+        async def scrape_source(mod, source: Source):
             try:
-                scraped = await mod.search(criteria)
+                run = check_and_reserve(source, inquiry_id=inquiry_id)
+            except RateLimitExceeded as e:
+                log.warning("Skipping %s: %s", source.value, e)
+                return []
+
+            try:
+                scraped = await asyncio.wait_for(
+                    mod.search(criteria), timeout=SCRAPER_TIMEOUT_S
+                )
                 log.info("%s returned %d results", mod.__name__, len(scraped))
-                all_scraped.extend(scraped)
+                mark_complete(run.id, success=True, results_count=len(scraped))
+                return scraped
+            except asyncio.TimeoutError:
+                log.error("scraper %s timed out after %ss", mod.__name__, SCRAPER_TIMEOUT_S)
+                mark_complete(run.id, success=False, error=f"timeout {SCRAPER_TIMEOUT_S}s")
+                return []
             except Exception as e:
                 log.exception("scraper %s failed: %s", mod.__name__, e)
+                mark_complete(run.id, success=False, error=str(e))
+                return []
+
+        results = await asyncio.gather(
+            scrape_source(amerpol, Source.amerpol),
+            scrape_source(copart, Source.copart),
+            scrape_source(iaai, Source.iaai),
+        )
+        all_scraped = [item for sublist in results for item in sublist]
 
         with Session(engine) as s:
             inquiry = s.get(Inquiry, inquiry_id)
@@ -138,13 +166,15 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             s.add(inquiry)
             s.commit()
 
+        # Parallel AI analysis
         with Session(engine) as s:
             settings = _get_settings(s)
             listings = s.exec(select(Listing).where(Listing.inquiry_id == inquiry_id)).all()
-            for listing in listings:
+
+            async def analyze_one(listing: Listing):
                 photos = json.loads(listing.photos_json or "[]")
                 if not photos:
-                    continue
+                    return None
                 listing_data = {
                     "title": listing.title,
                     "year": listing.year,
@@ -159,12 +189,29 @@ async def run_search_pipeline(inquiry_id: int) -> None:
                     "vin": listing.vin,
                 }
                 try:
-                    result = await analyzer.analyze_listing(listing_data, photos)
-                    _apply_analysis(listing, result, settings)
-                    s.add(listing)
-                    s.commit()
+                    result = await asyncio.wait_for(
+                        analyzer.analyze_listing(listing_data, photos),
+                        timeout=config.ai_timeout_seconds,
+                    )
+                    return (listing, result)
+                except asyncio.TimeoutError:
+                    log.error("analyzer timeout (%ss) for listing %s",
+                              config.ai_timeout_seconds, listing.id)
+                    return None
                 except Exception as e:
                     log.exception("analyzer failed for listing %s: %s", listing.id, e)
+                    return None
+
+            # Analyze all listings in parallel
+            analysis_results = await asyncio.gather(*[analyze_one(l) for l in listings])
+
+            # Apply results
+            for result in analysis_results:
+                if result:
+                    listing, analysis = result
+                    _apply_analysis(listing, analysis, settings)
+                    s.add(listing)
+            s.commit()
 
             listings = s.exec(select(Listing).where(Listing.inquiry_id == inquiry_id)).all()
             _rank(listings, s.get(Inquiry, inquiry_id))
@@ -177,7 +224,26 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             s.add(inquiry)
             s.commit()
 
-        log.info("pipeline finished inquiry=%s", inquiry_id)
+            ranked_count = sum(1 for l in listings if l.recommended_rank is not None)
+
+        log.info("pipeline finished inquiry=%s ranked=%d", inquiry_id, ranked_count)
+
+        # Auto-generate report if we have ranked candidates.
+        # Report is a draft for Janek — never auto-sent to client.
+        if ranked_count > 0:
+            try:
+                log.info("auto-generating report for inquiry=%s", inquiry_id)
+                await generate_report(inquiry_id)
+            except Exception as e:
+                log.exception("auto-generate_report failed inquiry=%s: %s", inquiry_id, e)
+                await notify_error(inquiry_id, f"raport auto-gen failed: {e}")
+        else:
+            log.info("inquiry=%s has 0 ranked listings, skipping report auto-gen", inquiry_id)
+            from backend.services.telegram_bot import _send
+            await _send(
+                f"⚠️ Pipeline #{inquiry_id} skończony, ale <b>0 pasujących aut</b> "
+                f"do wygenerowania raportu. Sprawdź filtry/scrapery."
+            )
     except Exception as e:
         log.exception("pipeline failed inquiry=%s: %s", inquiry_id, e)
         await notify_error(inquiry_id, str(e))

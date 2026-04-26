@@ -74,10 +74,24 @@ def calculate(
 
 async def fetch_nbp_usd_rate() -> float | None:
     import httpx
+    from backend.services.cache import cache_key_for_exchange_rate, get_cache
+
+    cache = get_cache()
+    cache_key = cache_key_for_exchange_rate("USD", "PLN")
+
+    # Check cache first (1 hour TTL)
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get("https://api.nbp.pl/api/exchangerates/rates/a/usd/?format=json")
             r.raise_for_status()
-            return float(r.json()["rates"][0]["mid"])
+            rate = float(r.json()["rates"][0]["mid"])
+
+            # Cache for 1 hour
+            cache.set(cache_key, rate, ttl_seconds=3600)
+            return rate
     except Exception:
         return None

@@ -25,46 +25,72 @@ async def search(criteria: SearchCriteria) -> list[ScrapedListing]:
 
     q = quote(f"{criteria.make} {criteria.model}".strip() or "cars")
     results: list[ScrapedListing] = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(storage_state=str(state_file))
-        page = await context.new_page()
-        try:
-            await page.goto(IAAI_SEARCH_TPL.format(q=q), wait_until="domcontentloaded", timeout=30000)
-            await jitter()
-            try:
-                await page.wait_for_selector("div.table-row-inner", timeout=15000)
-            except Exception:
-                log.warning("IAAI: no results rows found")
-                return results
-            cards = await page.query_selector_all("div.table-row-inner")
-            for card in cards[: criteria.max_results]:
-                try:
-                    link_el = await card.query_selector("a.heading-7")
-                    if not link_el:
-                        continue
-                    href = await link_el.get_attribute("href") or ""
-                    if href.startswith("/"):
-                        href = "https://www.iaai.com" + href
-                    title = (await link_el.inner_text()).strip()
-                    results.append(ScrapedListing(
-                        source="iaai",
-                        source_url=href,
-                        title=title,
-                    ))
-                except Exception as e:
-                    log.debug("iaai row parse failed: %s", e)
+    browser = None
+    context = None
 
-            for listing in results:
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(storage_state=str(state_file))
+            page = await context.new_page()
+
+            try:
+                log.info(f"IAAI: Loading search page for '{q}'")
+                await page.goto(IAAI_SEARCH_TPL.format(q=q), wait_until="domcontentloaded", timeout=30000)
+                await jitter()
+
                 try:
-                    await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
-                    await jitter()
-                    await _enrich_detail(page, listing)
-                except Exception as e:
-                    log.debug("iaai detail fetch failed for %s: %s", listing.source_url, e)
-        finally:
-            await context.close()
-            await browser.close()
+                    await page.wait_for_selector("div.table-row-inner", timeout=15000)
+                except Exception:
+                    log.warning("IAAI: No results found")
+                    return results
+
+                cards = await page.query_selector_all("div.table-row-inner")
+                log.info(f"IAAI: Found {len(cards)} result cards")
+
+                for card in cards[: criteria.max_results]:
+                    try:
+                        link_el = await card.query_selector("a.heading-7")
+                        if not link_el:
+                            continue
+                        href = await link_el.get_attribute("href") or ""
+                        if href.startswith("/"):
+                            href = "https://www.iaai.com" + href
+                        title = (await link_el.inner_text()).strip()
+                        results.append(ScrapedListing(
+                            source="iaai",
+                            source_url=href,
+                            title=title,
+                        ))
+                    except Exception as e:
+                        log.warning(f"IAAI: Failed to parse result card: {e}")
+                        continue
+
+                for listing in results:
+                    try:
+                        log.debug(f"IAAI: Fetching details for {listing.source_url}")
+                        await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
+                        await jitter()
+                        await _enrich_detail(page, listing)
+                    except Exception as e:
+                        log.error(f"IAAI: Failed to fetch details for {listing.source_url}: {e}")
+                        continue
+
+            finally:
+                if context:
+                    await context.close()
+                if browser:
+                    await browser.close()
+
+    except Exception as e:
+        log.error(f"IAAI search failed: {e}", exc_info=True)
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
+
+    log.info(f"IAAI: Returning {len(results)} listings")
     return results
 
 

@@ -34,59 +34,78 @@ async def search(criteria: SearchCriteria) -> list[ScrapedListing]:
         return []
 
     results: list[ScrapedListing] = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(storage_state=str(state_file))
-        page = await context.new_page()
-        try:
-            url = COPART_SEARCH_TPL.format(query=_build_query(criteria))
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await jitter()
-            await page.wait_for_timeout(3000)
+    browser = None
+    context = None
 
-            lot_links = await page.query_selector_all("a[href*='/lot/']")
-            seen_urls = set()
-            log.info(f"Found {len(lot_links)} lot links on Copart search page")
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)
+            context = await browser.new_context(storage_state=str(state_file))
+            page = await context.new_page()
 
-            for link in lot_links:
-                if len(results) >= criteria.max_results:
-                    break
-                try:
-                    href = await link.get_attribute("href") or ""
-                    if not href or href in seen_urls:
+            try:
+                url = COPART_SEARCH_TPL.format(query=_build_query(criteria))
+                log.info(f"Copart: Loading search page {url}")
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                await jitter()
+                await page.wait_for_timeout(3000)
+
+                lot_links = await page.query_selector_all("a[href*='/lot/']")
+                seen_urls = set()
+                log.info(f"Copart: Found {len(lot_links)} lot links")
+
+                for link in lot_links:
+                    if len(results) >= criteria.max_results:
+                        break
+                    try:
+                        href = await link.get_attribute("href") or ""
+                        if not href or href in seen_urls:
+                            continue
+                        seen_urls.add(href)
+
+                        if href.startswith("/"):
+                            href = "https://www.copart.com" + href
+
+                        parts = href.split("/")
+                        if len(parts) >= 6:
+                            title = parts[5].replace("-", " ").title()
+                        else:
+                            title = f"Copart Lot {parts[4] if len(parts) > 4 else ''}"
+
+                        results.append(ScrapedListing(
+                            source="copart",
+                            source_url=href,
+                            title=title,
+                        ))
+                    except Exception as e:
+                        log.warning(f"Copart: Failed to parse link: {e}")
                         continue
-                    seen_urls.add(href)
 
-                    if href.startswith("/"):
-                        href = "https://www.copart.com" + href
+                for listing in results:
+                    try:
+                        log.debug(f"Copart: Fetching details for {listing.source_url}")
+                        await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
+                        await jitter()
+                        await _enrich_detail(page, listing)
+                    except Exception as e:
+                        log.error(f"Copart: Failed to fetch details for {listing.source_url}: {e}")
+                        continue
 
-                    # Extract title from URL: /lot/99885295/2013-bmw-x5-xdrive35i-nj-glassboro-east
-                    parts = href.split("/")
-                    if len(parts) >= 6:
-                        title = parts[5].replace("-", " ").title()
-                    else:
-                        title = f"Copart Lot {parts[4] if len(parts) > 4 else ''}"
-                        log.debug(f"Short URL, parts={len(parts)}: {href}")
+            finally:
+                if context:
+                    await context.close()
+                if browser:
+                    await browser.close()
 
-                    log.debug(f"Adding listing: {title} from {href}")
-                    results.append(ScrapedListing(
-                        source="copart",
-                        source_url=href,
-                        title=title,
-                    ))
-                except Exception as e:
-                    log.debug("copart link parse failed: %s", e)
+    except Exception as e:
+        log.error(f"Copart search failed: {e}", exc_info=True)
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
 
-            for listing in results:
-                try:
-                    await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
-                    await jitter()
-                    await _enrich_detail(page, listing)
-                except Exception as e:
-                    log.debug("copart detail fetch failed for %s: %s", listing.source_url, e)
-        finally:
-            await context.close()
-            await browser.close()
+    log.info(f"Copart: Returning {len(results)} listings")
     return results
 
 
@@ -108,26 +127,29 @@ async def _enrich_detail(page, listing: ScrapedListing) -> None:
             listing.vin = (await vin_el.inner_text()).strip()[:17]
             break
 
-    # Photos - multiple strategies
+    # Photos - wait for images to load
     await page.wait_for_timeout(3000)
 
-    # Strategy 1: Look for gallery/carousel images
+    # Strategy 1: Gallery images with cs.copart.com
     gallery_imgs = await page.query_selector_all("img[src*='cs.copart.com'], img[data-src*='cs.copart.com']")
     for img in gallery_imgs[:20]:
         src = await img.get_attribute("src") or await img.get_attribute("data-src") or ""
-        if src and "cs.copart.com" in src:
+        if src and "cs.copart.com" in src and "lpp" in src:
+            # Convert thumbnails to full-size
             full_src = src.replace("_thb.jpg", "_ful.jpg").replace("_hrs.jpg", "_ful.jpg").replace("_thn.jpg", "_ful.jpg")
-            if full_src not in listing.photos and "lpp" in full_src:
+            if full_src not in listing.photos:
                 listing.photos.append(full_src)
 
-    # Strategy 2: Check for image URLs in page data/JSON
+    # Strategy 2: Regex in HTML (fallback if Strategy 1 found <3 photos)
     if len(listing.photos) < 3:
         content = await page.content()
         import re
-        urls = re.findall(r'https://cs\.copart\.com/[^"\'>\s]+_ful\.jpg', content)
+        urls = re.findall(r'https://cs\.copart\.com/[^"\'>\s]+lpp[^"\'>\s]+_ful\.jpg', content)
         for url in urls[:15]:
             if url not in listing.photos:
                 listing.photos.append(url)
+
+    log.info(f"Found {len(listing.photos)} photos for {listing.source_url}")
 
 
 def is_configured() -> bool:

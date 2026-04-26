@@ -9,6 +9,7 @@ import httpx
 from anthropic import Anthropic
 
 from backend.config import config
+from backend.services.cache import cache_key_for_ai_analysis, get_cache
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +82,14 @@ async def analyze_listing(
     photo_urls: list[str],
     max_photos: int = 6,
 ) -> dict[str, Any]:
+    # Check cache first
+    cache = get_cache()
+    cache_key = cache_key_for_ai_analysis({"vin": listing_data.get("vin", ""), "photos": photo_urls[:max_photos]})
+    cached = cache.get(cache_key)
+    if cached:
+        log.info(f"AI analysis cache hit for VIN {listing_data.get('vin', 'unknown')}")
+        return cached
+
     async with httpx.AsyncClient() as http:
         images: list[dict[str, Any]] = []
         for url in photo_urls[:max_photos]:
@@ -141,4 +150,9 @@ async def analyze_listing(
         "cache_read": getattr(resp.usage, "cache_read_input_tokens", 0),
         "cache_write": getattr(resp.usage, "cache_creation_input_tokens", 0),
     }
+
+    # Cache result for 24 hours
+    cache.set(cache_key, parsed, ttl_seconds=86400)
+    log.info(f"AI analysis cached for VIN {listing_data.get('vin', 'unknown')}")
+
     return parsed

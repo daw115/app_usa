@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+PORT="${PORT:-8000}"
+
 echo "Running Alembic migrations..."
 alembic upgrade head
 

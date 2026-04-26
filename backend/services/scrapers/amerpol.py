@@ -22,46 +22,70 @@ async def search(criteria: SearchCriteria) -> list[ScrapedListing]:
     If the site exposes a JSON XHR we can migrate to httpx later (see TODO in README).
     """
     state_file = storage_state_path("amerpol")
-
     q = quote(f"{criteria.make} {criteria.model}".strip() or "")
     results: list[ScrapedListing] = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        kwargs = {}
-        if state_file.exists():
-            kwargs["storage_state"] = str(state_file)
-        context = await browser.new_context(**kwargs)
-        page = await context.new_page()
-        try:
-            await page.goto(AMERPOL_SEARCH_TPL.format(q=q), wait_until="domcontentloaded", timeout=30000)
-            await jitter()
-            cards = await page.query_selector_all("a[href*='/samochod/'], article a[href*='/lot/']")
-            seen = set()
-            for card in cards[: criteria.max_results * 2]:
-                try:
-                    href = await card.get_attribute("href") or ""
-                    if not href or href in seen:
-                        continue
-                    seen.add(href)
-                    if href.startswith("/"):
-                        href = "https://amerpol.pl" + href
-                    title = (await card.inner_text()).strip().split("\n")[0]
-                    results.append(ScrapedListing(source="amerpol", source_url=href, title=title))
-                    if len(results) >= criteria.max_results:
-                        break
-                except Exception as e:
-                    log.debug("amerpol card parse failed: %s", e)
+    browser = None
+    context = None
 
-            for listing in results:
-                try:
-                    await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
-                    await jitter()
-                    await _enrich_detail(page, listing)
-                except Exception as e:
-                    log.debug("amerpol detail fetch failed for %s: %s", listing.source_url, e)
-        finally:
-            await context.close()
-            await browser.close()
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            kwargs = {"ignore_https_errors": True}
+            if state_file.exists():
+                kwargs["storage_state"] = str(state_file)
+            context = await browser.new_context(**kwargs)
+            page = await context.new_page()
+
+            try:
+                log.info(f"Amerpol: Loading search page for '{q}'")
+                await page.goto(AMERPOL_SEARCH_TPL.format(q=q), wait_until="domcontentloaded", timeout=30000)
+                await jitter()
+
+                cards = await page.query_selector_all("a[href*='/samochod/'], article a[href*='/lot/']")
+                log.info(f"Amerpol: Found {len(cards)} result cards")
+
+                seen = set()
+                for card in cards[: criteria.max_results * 2]:
+                    try:
+                        href = await card.get_attribute("href") or ""
+                        if not href or href in seen:
+                            continue
+                        seen.add(href)
+                        if href.startswith("/"):
+                            href = "https://amerpol.pl" + href
+                        title = (await card.inner_text()).strip().split("\n")[0]
+                        results.append(ScrapedListing(source="amerpol", source_url=href, title=title))
+                        if len(results) >= criteria.max_results:
+                            break
+                    except Exception as e:
+                        log.warning(f"Amerpol: Failed to parse result card: {e}")
+                        continue
+
+                for listing in results:
+                    try:
+                        log.debug(f"Amerpol: Fetching details for {listing.source_url}")
+                        await page.goto(listing.source_url, wait_until="domcontentloaded", timeout=30000)
+                        await jitter()
+                        await _enrich_detail(page, listing)
+                    except Exception as e:
+                        log.error(f"Amerpol: Failed to fetch details for {listing.source_url}: {e}")
+                        continue
+
+            finally:
+                if context:
+                    await context.close()
+                if browser:
+                    await browser.close()
+
+    except Exception as e:
+        log.error(f"Amerpol search failed: {e}", exc_info=True)
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
+
+    log.info(f"Amerpol: Returning {len(results)} listings")
     return results
 
 

@@ -1,6 +1,6 @@
 FROM python:3.9-slim-bookworm
 
-# Railway deployment - updated 2026-04-25
+# Railway deployment - cache bust marker: 2026-04-26-faza8-v2
 WORKDIR /app
 
 # Install system dependencies for Playwright
@@ -20,6 +20,12 @@ RUN playwright install chromium
 
 # Copy application code
 COPY . .
+
+# Cache bust for app layer (timestamp from build)
+ARG BUILD_TS=2026-04-26-faza8-v3
+RUN echo "Build TS: $BUILD_TS" > /BUILD_TS && \
+    grep -l "Schedulers started" /app/backend/main.py && \
+    grep "Schedulers started" /app/backend/main.py
 
 # Copy and set entrypoint script
 COPY entrypoint.sh /entrypoint.sh

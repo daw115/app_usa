@@ -30,6 +30,20 @@ class Config(BaseSettings):
     amerpol_password: str = ""
     scraperapi_key: str = ""
 
+    # Resource limits
+    playwright_timeout: int = 30000  # ms per page navigation
+    scraper_page_timeout: int = 15000  # ms waiting for selectors
+    ai_timeout_seconds: int = 60  # seconds per AI analysis
+    ai_max_photos: int = 6  # max photos per listing
+
+    # Scraper rate limit (per source, per day)
+    scraper_daily_limit: int = 30
+
+    # Observability
+    sentry_dsn: str = ""
+    environment: str = "development"  # set to "production" on Railway
+    log_format: str = "text"  # "text" for local, "json" for prod (Railway)
+
 
 config = Config()
 ROOT = Path(__file__).resolve().parent.parent
