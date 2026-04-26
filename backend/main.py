@@ -151,13 +151,50 @@ async def cache_cleanup_job():
     log.info(f"Cache cleanup complete: {stats}")
 
 
+async def auto_archive_job():
+    """Archive inquiries that have been sent more than 60 days ago.
+
+    We never delete data — only flip status to `archived` so the dashboard
+    stays focused on active work.
+    """
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=60)
+    archived = 0
+    with Session(engine) as s:
+        # Find sent inquiries with reports sent before cutoff
+        from backend.models import Report, ReportStatus
+        old_sent_reports = s.exec(
+            select(Report).where(
+                Report.status == ReportStatus.sent,
+                Report.sent_at != None,  # noqa: E711
+                Report.sent_at < cutoff,
+            )
+        ).all()
+
+        seen = set()
+        for rep in old_sent_reports:
+            if rep.inquiry_id in seen:
+                continue
+            seen.add(rep.inquiry_id)
+            inq = s.get(Inquiry, rep.inquiry_id)
+            if inq and inq.status != InquiryStatus.archived:
+                inq.status = InquiryStatus.archived
+                s.add(inq)
+                archived += 1
+        if archived:
+            s.commit()
+    if archived:
+        log.info(f"Auto-archived {archived} inquiries (sent > 60 days ago)")
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
     scheduler.add_job(auto_search_job, "interval", minutes=30, id="auto_search")
     scheduler.add_job(cache_cleanup_job, "interval", hours=1, id="cache_cleanup")
+    scheduler.add_job(auto_archive_job, "cron", hour=3, minute=15, id="auto_archive")
     scheduler.start()
-    log.info("Schedulers started: auto-search (30min), cache cleanup (1h)")
+    log.info("Schedulers started [v2]: auto-search (30min), cache cleanup (1h), auto-archive (daily 03:15)")
 
 
 @app.on_event("shutdown")

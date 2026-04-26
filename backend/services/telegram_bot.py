@@ -36,8 +36,7 @@ async def _send(text: str, reply_markup: dict | None = None) -> None:
 
 
 def _dashboard_url(path: str) -> str:
-    from backend.config import config
-    base = config.public_form_base_url
+    base = (config.public_form_base_url or "http://localhost:8000").rstrip("/")
     return f"{base}{path}"
 
 
@@ -79,6 +78,43 @@ async def notify_report_ready(report_id: int) -> None:
 async def notify_error(inquiry_id: int, message: str) -> None:
     text = f"⚠️ Błąd przy zapytaniu #{inquiry_id}: {message[:300]}"
     await _send(text)
+
+
+async def send_document(file_path: str, caption: str = "") -> bool:
+    """Send a file as a Telegram document. Returns True on success.
+
+    Telegram bot API limit: 50MB per file. For larger backups switch to
+    external storage.
+    """
+    if not config.telegram_bot_token or not config.telegram_chat_id:
+        log.info("Telegram disabled — skipping send_document(%s)", file_path)
+        return False
+
+    import os
+    if not os.path.exists(file_path):
+        log.error("send_document: file not found %s", file_path)
+        return False
+
+    size_mb = os.path.getsize(file_path) / (1024 * 1024)
+    if size_mb > 49:
+        log.error("send_document: file too large (%.1fMB > 50MB) %s", size_mb, file_path)
+        return False
+
+    url = f"https://api.telegram.org/bot{config.telegram_bot_token}/sendDocument"
+    try:
+        with open(file_path, "rb") as fp:
+            files = {"document": (os.path.basename(file_path), fp)}
+            data = {"chat_id": config.telegram_chat_id, "caption": caption[:1024]}
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                r = await client.post(url, data=data, files=files)
+                if r.status_code >= 400:
+                    log.error("telegram send_document failed: %s %s", r.status_code, r.text[:300])
+                    return False
+        log.info("Telegram document sent: %s (%.1fMB)", file_path, size_mb)
+        return True
+    except Exception as e:
+        log.error("telegram send_document error: %s", e)
+        return False
 
 
 def notify_new_inquiry_sync(inquiry_id: int) -> None:

@@ -140,9 +140,22 @@ async def submit_inquiry(
         s.commit()
         s.refresh(inquiry)
         inquiry_id = inquiry.id
+        tracking_token = inquiry.tracking_token
 
+    from backend.services.gmail import send_tracking_email
     from backend.services.telegram_bot import notify_new_inquiry
+    from backend.tasks import run_search_pipeline
     import asyncio
+
+    # Telegram notification to Janek
     asyncio.create_task(notify_new_inquiry(inquiry_id))
+    # Tracking email to client (sync smtplib — wrap in to_thread so it doesn't
+    # block the event loop)
+    asyncio.create_task(asyncio.to_thread(
+        send_tracking_email, client_name, client_email, inquiry_id, tracking_token,
+    ))
+    # Auto-trigger search pipeline. Cron (auto_search_job, every 30min) is a
+    # safety net for cases where this task crashes before persisting status.
+    asyncio.create_task(run_search_pipeline(inquiry_id))
 
     return templates.TemplateResponse("form.html", {"request": request, "submitted": True})

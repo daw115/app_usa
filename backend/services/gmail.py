@@ -99,3 +99,61 @@ def send_email(to: str, subject: str, html_body: str) -> str:
         return "smtp_sent"
     else:
         return create_draft(to, subject, html_body)
+
+
+def send_tracking_email(client_name: str, client_email: str, inquiry_id: int,
+                        tracking_token: str) -> str:
+    """Auto-confirmation email sent to the client right after they submit /inquiry.
+    Contains the tracking link only — no prices, no listings, no AI mentions.
+
+    Returns "smtp_sent" or Gmail draft id; logs and swallows errors so a mail
+    failure never blocks the inquiry pipeline.
+    """
+    base = (config.public_form_base_url or "http://localhost:8000").rstrip("/")
+    track_url = f"{base}/track/{inquiry_id}/{tracking_token}"
+
+    subject = f"Potwierdzenie zapytania #{inquiry_id} — AutoScout US"
+    html_body = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #1f2937; max-width: 600px; line-height: 1.6;">
+      <p>Dzień dobry {client_name},</p>
+
+      <p>Otrzymaliśmy Twoje zapytanie. Sprawdzamy dostępne aukcje i przygotowujemy
+         dla Ciebie ofertę z autami pasującymi do Twoich kryteriów.</p>
+
+      <p>W każdej chwili możesz zobaczyć status swojego zapytania pod tym linkiem:</p>
+
+      <p style="margin: 24px 0;">
+        <a href="{track_url}"
+           style="background:#2563eb;color:#fff;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">
+           Zobacz status zapytania
+        </a>
+      </p>
+
+      <p style="font-size:13px;color:#6b7280;">Lub skopiuj adres:<br>
+         <span style="word-break:break-all;">{track_url}</span></p>
+
+      <p>Pełną ofertę z wyceną i rekomendacjami otrzymasz mailem od Janka
+         w ciągu 1-2 dni roboczych. Jeśli będziemy mieli pytania, oddzwonimy.</p>
+
+      <p>Pozdrawiamy,<br>Zespół AutoScout US</p>
+    </div>
+    """
+
+    try:
+        if config.email_provider == "smtp":
+            _send_via_smtp(client_email, subject, html_body)
+            log.info("Tracking email sent to %s for inquiry #%s", client_email, inquiry_id)
+            return "smtp_sent"
+        else:
+            # Gmail OAuth path: creating a draft for an outgoing client email is
+            # the wrong UX (Janek would have to manually send each one). For now
+            # we only support real send via SMTP. Log and skip otherwise.
+            log.warning(
+                "EMAIL_PROVIDER=%s — tracking email skipped for inquiry #%s. "
+                "Use EMAIL_PROVIDER=smtp for auto-confirmations.",
+                config.email_provider, inquiry_id,
+            )
+            return "skipped_non_smtp"
+    except Exception as e:
+        log.exception("send_tracking_email failed for inquiry #%s: %s", inquiry_id, e)
+        return f"error: {e}"
