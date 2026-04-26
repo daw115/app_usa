@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.github/
+.claude/
+playwright_profiles/
+gmail_token.json
+gmail_client_secret.json
+*.db
+.env
+test_*.db
+node_modules/

@@ -194,7 +194,7 @@ def _startup() -> None:
     scheduler.add_job(cache_cleanup_job, "interval", hours=1, id="cache_cleanup")
     scheduler.add_job(auto_archive_job, "cron", hour=3, minute=15, id="auto_archive")
     scheduler.start()
-    log.info("Schedulers started: auto-search (30min), cache cleanup (1h), auto-archive (daily 03:15)")
+    log.info("Schedulers started [v2]: auto-search (30min), cache cleanup (1h), auto-archive (daily 03:15)")
 
 
 @app.on_event("shutdown")
