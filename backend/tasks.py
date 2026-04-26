@@ -126,7 +126,7 @@ async def run_search_pipeline(inquiry_id: int) -> None:
             criteria = _criteria(inquiry)
 
         # Parallel scraping with rate limiting + per-source timeout
-        SCRAPER_TIMEOUT_S = 90  # hard cap per source (Playwright can hang)
+        SCRAPER_TIMEOUT_S = 180  # hard cap per source (Playwright can hang, Railway is slower)
 
         async def scrape_source(mod, source: Source):
             try:
